@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SIH 26126 — Vision Based Autonomous Navigation UGV Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-base: #07090e;
+      --bg-surface: #0e131f;
+      --bg-card: rgba(18, 24, 38, 0.75);
+      --border-color: rgba(255, 255, 255, 0.08);
+      --border-active: rgba(6, 182, 212, 0.4);
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --accent-cyan: #06b6d4;
+      --accent-emerald: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-rose: #f43f5e;
+      --accent-violet: #8b5cf6;
+      --glow-cyan: 0 0 20px rgba(6, 182, 212, 0.25);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg-base);
+      color: var(--text-primary);
+      font-family: 'Inter', -apple-system, sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Glassmorphism Header */
+    header {
+      background: rgba(14, 19, 31, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-color);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .brand-section {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .bel-badge {
+      background: linear-gradient(135deg, #1e3a8a, #0284c7);
+      color: #fff;
+      font-weight: 700;
+      font-size: 11px;
+      letter-spacing: 1px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      box-shadow: 0 2px 8px rgba(2, 132, 199, 0.3);
+    }
+
+    .title-box h1 {
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: -0.2px;
+      color: var(--text-primary);
+    }
+
+    .title-box span {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    select, button {
+      font-family: 'Inter', sans-serif;
+      font-size: 12px;
+      border-radius: 6px;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+
+    select {
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      border: 1px solid var(--border-color);
+      padding: 6px 12px;
+      cursor: pointer;
+    }
+
+    select:hover, select:focus {
+      border-color: var(--accent-cyan);
+    }
+
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: var(--accent-emerald);
+    }
+
+    .status-pill.cautious {
+      background: rgba(245, 158, 11, 0.12);
+      border-color: rgba(245, 158, 11, 0.3);
+      color: var(--accent-amber);
+    }
+
+    .status-pill.danger {
+      background: rgba(244, 63, 94, 0.12);
+      border-color: rgba(244, 63, 94, 0.3);
+      color: var(--accent-rose);
+    }
+
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+      box-shadow: 0 0 8px currentColor;
+      animation: pulse 1.8s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    /* Main Container */
+    main {
+      flex: 1;
+      padding: 16px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      max-width: 1720px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    /* Control Bar & Scrubber */
+    .control-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .playback-buttons {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-action {
+      background: #1e293b;
+      color: var(--text-primary);
+      border: 1px solid var(--border-color);
+      padding: 6px 14px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-action:hover {
+      background: #334155;
+      border-color: var(--accent-cyan);
+    }
+
+    .btn-action.primary {
+      background: linear-gradient(135deg, #0284c7, #06b6d4);
+      border: none;
+      color: #fff;
+    }
+
+    .btn-action.primary:hover {
+      box-shadow: 0 0 12px rgba(6, 182, 212, 0.4);
+    }
+
+    .scrubber-box {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .scrubber-slider {
+      flex: 1;
+      -webkit-appearance: none;
+      appearance: none;
+      height: 6px;
+      border-radius: 3px;
+      background: #1e293b;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .scrubber-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--accent-cyan);
+      box-shadow: 0 0 8px var(--accent-cyan);
+      cursor: pointer;
+    }
+
+    .frame-counter {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      color: var(--text-secondary);
+      min-width: 95px;
+    }
+
+    .fps-badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      background: rgba(255, 255, 255, 0.05);
+      padding: 4px 8px;
+      border-radius: 4px;
+      color: var(--accent-cyan);
+    }
+
+    /* Multi-Monitor Visual Grid */
+    .monitor-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+
+    @media (max-width: 1280px) {
+      .monitor-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    .monitor-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+      position: relative;
+    }
+
+    .monitor-card:hover {
+      border-color: var(--border-active);
+    }
+
+    .monitor-header {
+      padding: 8px 12px;
+      background: rgba(15, 23, 42, 0.6);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .monitor-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .toggle-group {
+      display: flex;
+      background: #0f172a;
+      border-radius: 4px;
+      padding: 2px;
+    }
+
+    .toggle-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 10px;
+      padding: 2px 6px;
+      cursor: pointer;
+      border-radius: 3px;
+    }
+
+    .toggle-btn.active {
+      background: var(--accent-cyan);
+      color: #000;
+      font-weight: 600;
+    }
+
+    .monitor-body {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      background: #020408;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .monitor-img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      image-rendering: pixelated;
+    }
+
+    canvas.overlay-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    /* Telemetry & Gauges Section */
+    .telemetry-grid {
+      display: grid;
+      grid-template-columns: 280px 280px 1fr 1fr;
+      gap: 16px;
+    }
+
+    @media (max-width: 1280px) {
+      .telemetry-grid { grid-template-columns: 1fr 1fr; }
+    }
+
+    .telemetry-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    /* Motion Gauges */
+    .motion-value-box {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+
+    .big-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 32px;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .unit {
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+
+    .steering-indicator {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 4px;
+    }
+
+    .steering-badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 6px;
+      background: rgba(6, 182, 212, 0.15);
+      border: 1px solid var(--accent-cyan);
+      color: var(--accent-cyan);
+    }
+
+    .compass-dial {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: 2px solid var(--border-color);
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .compass-needle {
+      width: 3px;
+      height: 20px;
+      background: var(--accent-cyan);
+      position: absolute;
+      transform-origin: center bottom;
+      transition: transform 0.2s ease-out;
+      box-shadow: 0 0 6px var(--accent-cyan);
+    }
+
+    /* Confidence Bars */
+    .confidence-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .conf-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+    }
+
+    .conf-label {
+      width: 110px;
+      color: var(--text-secondary);
+      font-size: 11px;
+    }
+
+    .conf-bar-container {
+      flex: 1;
+      height: 8px;
+      background: #1e293b;
+      border-radius: 4px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .conf-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.3s ease, background-color 0.3s ease;
+    }
+
+    .conf-val {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      min-width: 38px;
+      text-align: right;
+    }
+
+    /* Arbiter Audit Console */
+    .arbiter-console {
+      background: #05070c;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 10px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      height: 110px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .audit-entry {
+      color: #94a3b8;
+      display: flex;
+      gap: 8px;
+    }
+
+    .audit-entry.highlight {
+      color: var(--accent-amber);
+    }
+
+    .audit-entry.alert {
+      color: var(--accent-rose);
+      font-weight: 600;
+    }
+
+    footer {
+      padding: 12px 24px;
+      border-top: 1px solid var(--border-color);
+      text-align: center;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand-section">
+      <div class="bel-badge">BEL</div>
+      <div class="title-box">
+        <h1>SIH 26126 — Vision Based Autonomous Navigation for Outdoor UGV</h1>
+        <span>Smart Automation | Software Prototype | GPS-Denied Navigation Stack</span>
+      </div>
+    </div>
+    <div class="header-controls">
+      <select id="scenarioSelect" onchange="onScenarioChange()">
+        <option value="scenario_1_open_path">Scenario 1: Open Traversable Trail</option>
+        <option value="scenario_2_sudden_obstacle">Scenario 2: Sudden Positive Obstacle</option>
+        <option value="scenario_3_terrain_boundary">Scenario 3: Non-Traversable Bushes</option>
+        <option value="scenario_4_depth_degradation">Scenario 4: Glare & Invalid Depth (Rule 12)</option>
+        <option value="scenario_5_visual_degradation">Scenario 5: Visual Feature Loss (Rule 13 E-Stop)</option>
+      </select>
+      <div id="statusPill" class="status-pill">
+        <span class="pulse-dot"></span>
+        <span id="statusText">HIGH CONFIDENCE</span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Playback Scrubber Bar -->
+    <div class="control-panel">
+      <div class="playback-buttons">
+        <button id="btnPlay" class="btn-action primary" onclick="togglePlay()">
+          <span id="playIcon">▶</span> Play
+        </button>
+        <button class="btn-action" onclick="stepFrame(-1)">⏮ Step</button>
+        <button class="btn-action" onclick="stepFrame(1)">Step ⏭</button>
+        <button class="btn-action" onclick="resetPipeline()">⟳ Reset</button>
+      </div>
+
+      <div class="scrubber-box">
+        <input type="range" id="frameSlider" class="scrubber-slider" min="0" max="14" value="0" oninput="onScrub(this.value)">
+        <span id="frameCounter" class="frame-counter">Frame 00 / 14</span>
+      </div>
+
+      <div class="fps-badge">
+        <span id="fpsReadout">6.2 FPS</span> | <span id="latReadout">161 ms</span>
+      </div>
+    </div>
+
+    <!-- 4 Synchronized Visual Feeds -->
+    <div class="monitor-grid">
+      <!-- Monitor 1: RGB & Semantic Perception -->
+      <div class="monitor-card">
+        <div class="monitor-header">
+          <span class="monitor-title">1. Camera Perception</span>
+          <div class="toggle-group">
+            <button id="btnRgbRaw" class="toggle-btn" onclick="setPerceptionMode('rgb')">Raw RGB</button>
+            <button id="btnRgbSem" class="toggle-btn active" onclick="setPerceptionMode('sem')">Traversability</button>
+          </div>
+        </div>
+        <div class="monitor-body">
+          <img id="imgPerception" class="monitor-img" src="" alt="Perception Feed">
+        </div>
+      </div>
+
+      <!-- Monitor 2: 3D Metric Depth Geometry -->
+      <div class="monitor-card">
+        <div class="monitor-header">
+          <span class="monitor-title">2. Metric Depth Geometry</span>
+          <span style="font-size: 10px; color: var(--text-muted); font-family: monospace;">TURBO [0m-10m]</span>
+        </div>
+        <div class="monitor-body">
+          <img id="imgDepth" class="monitor-img" src="" alt="Depth Colormap">
+        </div>
+      </div>
+
+      <!-- Monitor 3: 2D BEV Costmap & Trajectories -->
+      <div class="monitor-card">
+        <div class="monitor-header">
+          <span class="monitor-title">3. Fused BEV Costmap & DWA</span>
+          <span id="plannerStatusBadge" style="font-size: 10px; color: var(--accent-cyan); font-family: monospace;">PATH_FOUND</span>
+        </div>
+        <div class="monitor-body">
+          <img id="imgCostmap" class="monitor-img" src="" alt="BEV Costmap">
+          <canvas id="canvasCostmapOverlay" class="overlay-canvas" width="300" height="300"></canvas>
+        </div>
+      </div>
+
+      <!-- Monitor 4: Visual Odometry / Localization -->
+      <div class="monitor-card">
+        <div class="monitor-header">
+          <span class="monitor-title">4. Visual Odometry Trajectory</span>
+          <span id="voStatusText" style="font-size: 10px; color: var(--accent-emerald); font-family: monospace;">TRACKING_OK</span>
+        </div>
+        <div class="monitor-body">
+          <canvas id="canvasOdometry" class="overlay-canvas" width="300" height="225"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Telemetry & Safety Arbiter -->
+    <div class="telemetry-grid">
+      <!-- Card 1: Linear Velocity -->
+      <div class="telemetry-card">
+        <div class="card-header">
+          <span>Commanded Velocity</span>
+          <span>Linear</span>
+        </div>
+        <div class="motion-value-box">
+          <span id="valLinearVel" class="big-value">0.80</span>
+          <span class="unit">m/s</span>
+        </div>
+        <div style="font-size: 11px; color: var(--text-muted);">
+          Max Speed: <span id="valSpeedCap" style="color: var(--text-secondary);">0.80 m/s</span>
+        </div>
+      </div>
+
+      <!-- Card 2: Steering & Angular -->
+      <div class="telemetry-card">
+        <div class="card-header">
+          <span>Steering & Yaw Rate</span>
+          <span>Direction</span>
+        </div>
+        <div class="steering-indicator">
+          <div class="compass-dial">
+            <div id="compassNeedle" class="compass-needle"></div>
+          </div>
+          <div>
+            <div id="badgeSteering" class="steering-badge">FORWARD</div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+              ω: <span id="valAngularVel" style="font-family: monospace; color: var(--text-secondary);">0.00</span> rad/s
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 3: Multi-Source Confidence Breakdown -->
+      <div class="telemetry-card">
+        <div class="card-header">
+          <span>Multi-Source Confidence</span>
+          <span>Gate C_total: <b id="valConfTotal" style="color: var(--accent-cyan);">0.77</b></span>
+        </div>
+        <div class="confidence-list">
+          <div class="conf-row">
+            <span class="conf-label">Perception C_perc:</span>
+            <div class="conf-bar-container"><div id="barPerc" class="conf-fill" style="width: 77%; background: var(--accent-cyan);"></div></div>
+            <span id="txtPerc" class="conf-val">0.77</span>
+          </div>
+          <div class="conf-row">
+            <span class="conf-label">Geometry C_geom:</span>
+            <div class="conf-bar-container"><div id="barGeom" class="conf-fill" style="width: 98%; background: var(--accent-emerald);"></div></div>
+            <span id="txtGeom" class="conf-val">0.98</span>
+          </div>
+          <div class="conf-row">
+            <span class="conf-label">Odometry C_vo:</span>
+            <div class="conf-bar-container"><div id="barVo" class="conf-fill" style="width: 90%; background: var(--accent-emerald);"></div></div>
+            <span id="txtVo" class="conf-val">0.90</span>
+          </div>
+          <div class="conf-row">
+            <span class="conf-label">Fusion C_fusion:</span>
+            <div class="conf-bar-container"><div id="barFusion" class="conf-fill" style="width: 77%; background: var(--accent-cyan);"></div></div>
+            <span id="txtFusion" class="conf-val">0.77</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 4: Deterministic Safety Arbiter Audit -->
+      <div class="telemetry-card">
+        <div class="card-header">
+          <span>Safety Arbiter Audit</span>
+          <span id="navStateBadge" style="font-size: 10px; color: var(--accent-emerald); font-family: monospace;">TRACKING</span>
+        </div>
+        <div id="arbiterLog" class="arbiter-console">
+          <div class="audit-entry">Initializing safety arbitration loop...</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    Bharat Electronics Limited (BEL) &bull; Smart Automation &bull; Software Navigation Stack &bull; Real Outdoor Visual Validation
+  </footer>
+
+  <script>
+    let currentScenario = "scenario_1_open_path";
+    let currentFrame = 0;
+    let totalFrames = 15;
+    let isPlaying = false;
+    let playInterval = null;
+    let perceptionMode = "sem"; // "rgb" or "sem"
+
+    async function loadFrame(idx) {
+      try {
+        const res = await fetch(`/api/telemetry?scenario=${currentScenario}&frame=${idx}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        totalFrames = data.total_frames || 15;
+        currentFrame = data.frame_id;
+        renderTelemetry(data);
+      } catch (err) {
+        console.error("Telemetry fetch error:", err);
+      }
+    }
+
+    function renderTelemetry(data) {
+      // Scrubber
+      document.getElementById("frameSlider").max = totalFrames - 1;
+      document.getElementById("frameSlider").value = currentFrame;
+      document.getElementById("frameCounter").innerText = `Frame ${String(currentFrame).padStart(2, '0')} / ${String(totalFrames - 1).padStart(2, '0')}`;
+      document.getElementById("fpsReadout").innerText = `${data.fps.toFixed(1)} FPS`;
+      document.getElementById("latReadout").innerText = `${data.latency_ms.toFixed(0)} ms`;
+
+      // Images
+      if (data.images) {
+        document.getElementById("imgPerception").src = "data:image/jpeg;base64," + (perceptionMode === "sem" ? data.images.semantic : data.images.rgb);
+        document.getElementById("imgDepth").src = "data:image/jpeg;base64," + data.images.depth;
+        document.getElementById("imgCostmap").src = "data:image/jpeg;base64," + data.images.costmap;
+      }
+
+      // Motion
+      const m = data.motion || {};
+      document.getElementById("valLinearVel").innerText = (m.linear_velocity || 0).toFixed(2);
+      document.getElementById("valAngularVel").innerText = (m.angular_velocity || 0).toFixed(2);
+      document.getElementById("badgeSteering").innerText = m.steering_direction || "FORWARD";
+
+      // Compass needle rotation (-w in rad mapped to deg)
+      const deg = -(m.angular_velocity || 0) * (180 / Math.PI) * 1.5;
+      document.getElementById("compassNeedle").style.transform = `rotate(${deg}deg)`;
+
+      // Safety Status Pill
+      const statusPill = document.getElementById("statusPill");
+      const statusText = document.getElementById("statusText");
+      const sState = m.safety_state || "HIGH_CONFIDENCE";
+      statusText.innerText = sState.replace("_", " ");
+      statusPill.className = "status-pill";
+      if (sState === "HIGH_CONFIDENCE") {
+        statusPill.classList.add("normal");
+      } else if (sState === "CAUTIOUS_DEGRADED" || sState === "LOW_CONFIDENCE_SLOW") {
+        statusPill.classList.add("cautious");
+      } else {
+        statusPill.classList.add("danger");
+      }
+
+      document.getElementById("navStateBadge").innerText = m.navigation_state || "TRACKING";
+      document.getElementById("plannerStatusBadge").innerText = (data.planning && data.planning.status) || "PATH_FOUND";
+
+      // Confidence Bars
+      const cb = data.confidence_breakdown || {};
+      document.getElementById("valConfTotal").innerText = (cb.c_total || 0).toFixed(2);
+      setBar("barPerc", "txtPerc", cb.c_perc);
+      setBar("barGeom", "txtGeom", cb.c_geom);
+      setBar("barVo", "txtVo", cb.c_vo);
+      setBar("barFusion", "txtFusion", cb.c_fusion);
+
+      // Arbiter Console
+      const logBox = document.getElementById("arbiterLog");
+      logBox.innerHTML = "";
+      if (data.safety && data.safety.audit_reasons) {
+        data.safety.audit_reasons.forEach(r => {
+          const div = document.createElement("div");
+          div.className = "audit-entry";
+          if (r.includes("Emergency") || r.includes("lost") || r.includes("collision")) {
+            div.classList.add("alert");
+          } else if (r.includes("cautious") || r.includes("reduced") || r.includes("Medium")) {
+            div.classList.add("highlight");
+          }
+          div.innerText = `> [${sState}] ${r}`;
+          logBox.appendChild(div);
+        });
+      }
+
+      // Draw Odometry Trajectory Plot
+      renderOdometryCanvas(data.odometry);
+    }
+
+    function setBar(barId, txtId, val) {
+      const v = Math.max(0, Math.min(1, val || 0));
+      const pct = (v * 100).toFixed(0);
+      const bar = document.getElementById(barId);
+      bar.style.width = pct + "%";
+      if (v >= 0.75) bar.style.background = "var(--accent-emerald)";
+      else if (v >= 0.45) bar.style.background = "var(--accent-amber)";
+      else bar.style.background = "var(--accent-rose)";
+      document.getElementById(txtId).innerText = v.toFixed(2);
+    }
+
+    function renderOdometryCanvas(odo) {
+      if (!odo) return;
+      const canvas = document.getElementById("canvasOdometry");
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Draw grid
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.05)";
+      ctx.lineWidth = 1;
+      for (let x = 0; x < canvas.width; x += 30) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+      }
+      for (let y = 0; y < canvas.height; y += 30) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+      }
+
+      // Origin at center bottom (robot starting position)
+      const ox = canvas.width / 2;
+      const oy = canvas.height - 30;
+      const scale = 25.0; // pixels per meter
+
+      // Draw path history
+      if (odo.history && odo.history.length > 1) {
+        ctx.beginPath();
+        ctx.strokeStyle = "rgba(6, 182, 212, 0.8)";
+        ctx.lineWidth = 2.5;
+        odo.history.forEach((pt, idx) => {
+          // X forward (up on canvas), Y left (left on canvas)
+          const px = ox - pt.y * scale;
+          const py = oy - pt.x * scale;
+          if (idx === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        });
+        ctx.stroke();
+      }
+
+      // Draw robot current pose
+      const rx = ox - odo.y * scale;
+      const ry = oy - odo.x * scale;
+      ctx.save();
+      ctx.translate(rx, ry);
+      ctx.rotate(-odo.yaw);
+      // Robot footprint triangle
+      ctx.fillStyle = "#10b981";
+      ctx.beginPath();
+      ctx.moveTo(0, -10);
+      ctx.lineTo(-7, 7);
+      ctx.lineTo(7, 7);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+
+      // Readouts
+      ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
+      ctx.font = "10px JetBrains Mono";
+      ctx.fillText(`X: ${odo.x.toFixed(2)}m  Y: ${odo.y.toFixed(2)}m  θ: ${(odo.yaw * 180 / Math.PI).toFixed(1)}°`, 10, 18);
+      ctx.fillText(`Inliers: ${odo.inliers} (${odo.status})`, 10, 32);
+    }
+
+    function togglePlay() {
+      isPlaying = !isPlaying;
+      const btn = document.getElementById("btnPlay");
+      const icon = document.getElementById("playIcon");
+      if (isPlaying) {
+        icon.innerText = "⏸";
+        btn.innerHTML = `<span id="playIcon">⏸</span> Pause`;
+        playInterval = setInterval(() => {
+          if (currentFrame >= totalFrames - 1) {
+            currentFrame = 0;
+          } else {
+            currentFrame++;
+          }
+          loadFrame(currentFrame);
+        }, 300);
+      } else {
+        icon.innerText = "▶";
+        btn.innerHTML = `<span id="playIcon">▶</span> Play`;
+        clearInterval(playInterval);
+      }
+    }
+
+    function stepFrame(delta) {
+      if (isPlaying) togglePlay();
+      currentFrame = Math.max(0, Math.min(totalFrames - 1, currentFrame + delta));
+      loadFrame(currentFrame);
+    }
+
+    function onScrub(val) {
+      if (isPlaying) togglePlay();
+      currentFrame = parseInt(val);
+      loadFrame(currentFrame);
+    }
+
+    function onScenarioChange() {
+      currentScenario = document.getElementById("scenarioSelect").value;
+      currentFrame = 0;
+      loadFrame(0);
+    }
+
+    async function resetPipeline() {
+      if (isPlaying) togglePlay();
+      await fetch(`/api/reset?scenario=${currentScenario}`);
+      currentFrame = 0;
+      loadFrame(0);
+    }
+
+    function setPerceptionMode(mode) {
+      perceptionMode = mode;
+      document.getElementById("btnRgbRaw").classList.toggle("active", mode === "rgb");
+      document.getElementById("btnRgbSem").classList.toggle("active", mode === "sem");
+      loadFrame(currentFrame);
+    }
+
+    // Initial load
+    window.addEventListener("DOMContentLoaded", () => {
+      loadFrame(0);
+    });
+  </script>
+</body>
+</html>

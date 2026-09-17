@@ -1,1 +1,21 @@
-# Costmap, planner, controller parameters
+# Planning and Costmap configuration
+planning:
+  costmap:
+    grid_size_m: [10.0, 10.0]
+    resolution_m: 0.10
+    inscribed_radius_m: 0.35
+    inflation_radius_m: 0.85
+    default_unknown_cost: 128  # Enforces Rule 11: unknown is not free space
+  dwa:
+    max_linear_velocity: 0.80  # m/s
+    min_linear_velocity: 0.05  # m/s
+    max_angular_velocity: 0.85 # rad/s
+    max_linear_accel: 0.50     # m/s^2
+    max_angular_accel: 1.00    # rad/s^2
+    sim_time_s: 2.5
+    dt_s: 0.15
+    weights:
+      heading: 0.25
+      clearance: 0.35
+      traversability_cost: 0.25
+      velocity: 0.15

@@ -1,1 +1,10 @@
-# RTAB-Map / ORB-SLAM3 parameters
+# Visual Odometry / SLAM configuration
+slam:
+  backend: "direct_feature_pnp"
+  max_features: 400
+  min_feature_dist: 12.0
+  inlier_thresholds:
+    nominal: 40
+    degraded: 18
+    lost: 8
+  reprojection_error_px: 2.5

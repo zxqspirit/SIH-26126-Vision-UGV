@@ -1,1 +1,16 @@
-# Global system config: speeds, clearances, confidence states
+# Global system and safety parameters
+system:
+  project: "SIH 26126 — Vision Based Autonomous Navigation UGV"
+  organization: "Bharat Electronics Limited (BEL)"
+  mode: "software_only_real_data_validation"
+  safety_gate:
+    high_confidence_threshold: 0.75
+    medium_confidence_threshold: 0.45
+    low_confidence_threshold: 0.25
+    emergency_stopping_distance_m: 0.45
+    cautious_velocity_limit_mps: 0.35
+    crawl_velocity_limit_mps: 0.15
+  drivetrain:
+    type: "differential_drive"
+    track_width_m: 0.45
+    chassis_length_m: 0.60
