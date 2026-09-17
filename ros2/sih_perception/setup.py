@@ -21,6 +21,7 @@ setup(
     entry_points={
         'console_scripts': [
             'traversability_classifier_node = sih_perception.traversability_classifier_node:main',
+            'sensor_feed_publisher_node = sih_perception.sensor_feed_publisher_node:main',
         ],
     },
 )
