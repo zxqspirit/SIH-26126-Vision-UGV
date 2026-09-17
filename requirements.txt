@@ -1,0 +1,6 @@
+# Python tools used outside the ROS 2 base image. Keep runtime hardware packages
+# (CUDA, TensorRT, camera SDK) out of this file until the physical platform is known.
+numpy==1.26.4
+opencv-python-headless==4.10.0.84
+PyYAML==6.0.2
+pytest==8.3.5
