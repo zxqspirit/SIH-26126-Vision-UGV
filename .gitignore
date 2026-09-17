@@ -42,34 +42,3 @@ log/
 # OS
 .DS_Store
 Thumbs.db
-
-# Models & data (large binary)
-models/checkpoints/*.bin
-models/checkpoints/*.pt
-models/checkpoints/*.onnx
-models/checkpoints/*.engine
-datasets/raw/*.bag
-datasets/raw/*.rosbag
-datasets/raw/*.bin
-datasets/raw/*.png
-datasets/raw/*.jpg
-datasets/raw/*.jpeg
-datasets/processed/*
-datasets/annotations/*.json
-datasets/annotations/*.csv
-
-# Results
-results/*/
-
-# Local config overrides
-config/*.local.yaml
-config/*.private.yaml
-
-# Secrets
-*.env
-secrets/
-credentials/
-
-# Simulation artifacts
-simulation/*.world.bak
-simulation/*.dae.bak
