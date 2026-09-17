@@ -151,3 +151,6 @@ mlruns/
 *.iml
 *.sublime-workspace
 *.sublime-project
+
+models/**/*.onnx
+models/benchmarks/*.onnx
