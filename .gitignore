@@ -42,3 +42,112 @@ log/
 # OS
 .DS_Store
 Thumbs.db
+
+# ---------------------------------------------------------------------------
+# SIH 26126 data, models, artifacts, and local overrides
+# ---------------------------------------------------------------------------
+
+# Local configuration overrides and secrets — never commit real secrets
+config/*.local.yaml
+config/*.secret.yaml
+*.env
+.env.*
+secrets/
+credentials/
+*.pem
+*.key
+*-credentials*
+id_rsa
+id_rsa.pub
+
+# Build artifacts and caches
+*.pyc
+.pytest_cache/
+.mypy_cache/
+__pycache__/
+*.egg-info/
+*.egg
+*.whl
+*.tar.gz
+*.zip
+coverage.xml
+htmlcov/
+.coverage
+*.log
+logs/
+*.bak
+*.bak.*
+*.tmp
+*.swp
+*~
+
+# Local build/runtime artifacts (ROS 2, colcon, workspace)
+build/
+install/
+log/
+*.log
+*.pyc
+__pycache__/
+
+# Experiment outputs and run artifacts
+results/
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.bmp
+*.tiff
+*.mp4
+*.avi
+*.bag
+*.db3
+*.mcap
+*.db
+*.sqlite
+*.sqlite3
+*.h5
+*.hdf5
+*.pkl
+*.pickle
+*.npy
+*.npz
+
+# Datasets — raw and derived data are artifacts, not source
+datasets/raw/
+datasets/processed/
+datasets/annotations/
+datasets/*.csv
+datasets/*.json
+datasets/*.parquet
+datasets/*.log
+
+# Model binaries and checkpoints by default
+models/checkpoints/
+models/*.pth
+models/*.pt
+models/*.onnx
+models/*.engine
+models/*.trt
+models/*.bin
+models/*.h5
+models/*.pb
+models/*.safetensors
+
+# Notebook scratch and local experiment notes
+*.ipynb
+experiments/
+ray_results/
+wandb/
+.mlflow/
+mlruns/
+
+# Editor/tool local files
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/*
+*.iml
+*.sublime-workspace
+*.sublime-project
