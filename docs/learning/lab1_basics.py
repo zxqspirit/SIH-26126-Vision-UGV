@@ -213,13 +213,13 @@ def main() -> None:
     print(f"Brightness mask pixels : {bright_count} / {total} ({100 * bright_count / total:.1f}%)")
 
     # 4. Overlay masks
-    overlay_rect = overlay_mask(resized, rect_mask, color_bgr=(0, 255, 0), alpha=0.30)
-    overlay_bright = overlay_mask(resized, bright_mask, color_bgr=(255, 0, 0), alpha=0.30)
-    overlay_both = overlay_mask(overlay_rect, bright_mask, color_bgr=(255, 0, 0), alpha=0.30)
+    overlay_rect = overlay_mask(resized, rect_mask, color_bgr=(0, 255, 0), alpha=0.30)  # green
+    overlay_bright = overlay_mask(resized, bright_mask, color_bgr=(0, 0, 255), alpha=0.30)  # red (BGR order)
+    overlay_both = overlay_mask(overlay_rect, bright_mask, color_bgr=(0, 0, 255), alpha=0.30)  # red on top
 
     # Add outlines for clarity
     overlay_rect = draw_mask_outline(overlay_rect, rect_mask, color_bgr=(0, 255, 0))
-    overlay_bright = draw_mask_outline(overlay_bright, bright_mask, color_bgr=(255, 0, 0))
+    overlay_bright = draw_mask_outline(overlay_bright, bright_mask, color_bgr=(0, 0, 255))
 
     # 5. Save results
     rect_path = LEARNING_DIR / "outdoor_scene_rect_mask.png"
