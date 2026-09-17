@@ -1,4 +1,4 @@
-# Python
+﻿# Python
 __pycache__/
 *.py[cod]
 *$py.class
@@ -47,7 +47,7 @@ Thumbs.db
 # SIH 26126 data, models, artifacts, and local overrides
 # ---------------------------------------------------------------------------
 
-# Local configuration overrides and secrets — never commit real secrets
+# Local configuration overrides and secrets â€” never commit real secrets
 config/*.local.yaml
 config/*.secret.yaml
 *.env
@@ -112,7 +112,7 @@ results/
 *.npy
 *.npz
 
-# Datasets — raw and derived data are artifacts, not source
+# Datasets â€” raw and derived data are artifacts, not source
 datasets/raw/
 datasets/processed/
 datasets/annotations/
@@ -122,7 +122,7 @@ datasets/*.parquet
 datasets/*.log
 
 # Model binaries and checkpoints by default
-models/checkpoints/
+# models/checkpoints/
 models/*.pth
 models/*.pt
 models/*.onnx
@@ -135,7 +135,7 @@ models/*.safetensors
 
 # Notebook scratch and local experiment notes
 *.ipynb
-experiments/
+/experiments/
 ray_results/
 wandb/
 .mlflow/
@@ -154,3 +154,19 @@ mlruns/
 
 models/**/*.onnx
 models/benchmarks/*.onnx
+
+datasets/dataset_v1.0/train/
+datasets/dataset_v1.0/val/
+datasets/dataset_v1.0/test/
+
+!models/checkpoints/**/*.json
+!models/checkpoints/**/.gitkeep
+
+!docs/experiments/**
+
+
+models/checkpoints/**/*.pth
+models/checkpoints/**/*.pt
+models/checkpoints/**/*.bin
+models/checkpoints/**/*.onnx
+
