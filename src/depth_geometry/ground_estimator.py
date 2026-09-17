@@ -16,19 +16,23 @@ class GroundEstimator:
     def __init__(
         self,
         max_ground_height_m: float = 0.15,
-        forward_range_m: Tuple[float, float] = (0.5, 6.0),
-        lateral_range_m: Tuple[float, float] = (-2.0, 2.0),
+        forward_range_m: Tuple[float, float] = (0.5, 5.0),
+        lateral_range_m: Tuple[float, float] = (-1.5, 1.5),
+        max_slope_deg: float = 25.0,
     ) -> None:
-        self.max_ground_height_m = max_ground_height_m
+        self.max_ground_height = max_ground_height_m
         self.forward_range = forward_range_m
         self.lateral_range = lateral_range_m
+        self.max_slope_deg = max_slope_deg
+        # tan(25 deg) ~ 0.466
+        self.max_slope_tan = np.tan(np.radians(max_slope_deg))
 
     def estimate_ground(
         self,
         points_base_link: np.ndarray,
         valid_mask: np.ndarray,
     ) -> Tuple[np.ndarray, np.ndarray, Tuple[float, float, float, float]]:
-        """Estimate ground height map and ground plane equation ax + by + cz + d = 0.
+        """Estimate ground height map and plane equation ax + by + cz + d = 0.
 
         Returns:
             ground_height_map: np.ndarray of shape (H, W), estimated ground elevation at each pixel
@@ -40,7 +44,7 @@ class GroundEstimator:
         y = points_base_link[..., 1]
         z = points_base_link[..., 2]
 
-        # Candidate ground points: in forward corridor, near ground level (|z| < 0.35m)
+        # Candidate ground points: in forward corridor near nominal ground (|z| < 0.35m)
         in_corridor = (
             valid_mask &
             (x >= self.forward_range[0]) & (x <= self.forward_range[1]) &
@@ -52,26 +56,35 @@ class GroundEstimator:
         y_pts = y[in_corridor]
         z_pts = z[in_corridor]
 
-        # Default horizontal ground plane at z = 0.0: 0*x + 0*y + 1*z + 0 = 0
-        a, b, c, d = 0.0, 0.0, 1.0, 0.0
+        # Default horizontal ground plane at z = 0.0: 0*x + 0*y - 1*z + 0 = 0
+        a, b, c, d = 0.0, 0.0, -1.0, 0.0
 
-        if len(z_pts) > 100:
-            # Fit plane z = p0*x + p1*y + p2 using robust least squares
-            A = np.column_stack([x_pts, y_pts, np.ones_like(x_pts)])
+        n_pts = len(z_pts)
+        if n_pts >= 50:
+            # Subsample candidate points for fast robust plane fitting (< 1 ms)
+            if n_pts > 1000:
+                step = n_pts // 1000
+                x_fit, y_fit, z_fit = x_pts[::step], y_pts[::step], z_pts[::step]
+            else:
+                x_fit, y_fit, z_fit = x_pts, y_pts, z_pts
+
+            A = np.column_stack([x_fit, y_fit, np.ones_like(x_fit)])
             try:
-                # Solve least squares
-                coeffs, _, _, _ = np.linalg.lstsq(A, z_pts, rcond=None)
+                coeffs, _, _, _ = np.linalg.lstsq(A, z_fit, rcond=None)
                 p0, p1, p2 = coeffs
-                # Check if slope is reasonable for outdoor terrain (< 30 degrees)
-                if abs(p0) < 0.6 and abs(p1) < 0.6 and abs(p2) < 0.3:
-                    # z = p0*x + p1*y + p2  =>  p0*x + p1*y - z + p2 = 0
+
+                # Verify slope is physically plausible for outdoor UGV (< max_slope_deg)
+                total_slope = np.sqrt(p0**2 + p1**2)
+                if total_slope <= self.max_slope_tan and abs(p2) <= 0.25:
+                    # z = p0*x + p1*y + p2  =>  p0*x + p1*y - 1.0*z + p2 = 0
                     a, b, c, d = float(p0), float(p1), -1.0, float(p2)
             except Exception:
                 pass
 
-        # Compute ground elevation at every (x, y) point: z_ground = -(a*x + b*y + d) / c
-        z_ground = -(a * x + b * y + d) / c
-        # For pixels without valid depth, set default nominal ground
+        # Compute ground elevation at every pixel: z_ground = -(a*x + b*y + d) / c = a*x + b*y + d
+        z_ground = a * x + b * y + d
+
+        # For invalid depth pixels, set nominal zero ground
         z_ground_clean = np.where(valid_mask, z_ground, 0.0)
 
         # Height difference: points significantly above ground are obstacles

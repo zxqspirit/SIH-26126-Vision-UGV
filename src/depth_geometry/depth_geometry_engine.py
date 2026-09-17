@@ -24,17 +24,15 @@ class DepthGeometryEngine:
         """Process metric depth map into 3D geometric traversability."""
         start_time = time.perf_counter()
 
-        # 1. Project to 3D in camera frame
-        points_opt, valid_mask = self.projector.project_to_camera_frame(depth_m)
+        # 1. Directly project and transform to robot base_link frame (< 6 ms)
+        points_base, valid_mask = self.projector.project_and_transform_to_base_link(depth_m)
 
-        # 2. Transform to robot base_link frame
-        points_base = self.projector.transform_to_base_link(points_opt)
-
-        # 3. Ground plane estimation
+        # 2. Ground plane estimation (< 2 ms)
         ground_map, height_diff, plane_coeffs = self.ground_estimator.estimate_ground(points_base, valid_mask)
 
-        # 4. Obstacle detection
+        # 3. Obstacle detection & Rule 12 enforcement (< 5 ms)
         result = self.obstacle_detector.detect(points_base, valid_mask, ground_map, height_diff)
+        result.plane_coeffs = plane_coeffs
         result.latency_ms = (time.perf_counter() - start_time) * 1000.0
 
         # Subsample point cloud for visualization (e.g. 1 in every 16 points)

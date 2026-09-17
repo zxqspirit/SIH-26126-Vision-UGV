@@ -108,6 +108,8 @@ class DepthGeometryResult:
     confidence: float  # Scalar in [0.0, 1.0] based on depth coverage and validity
     points_3d: Optional[np.ndarray] = None  # Subsampled 3D point cloud in base_link (N, 3)
     latency_ms: float = 0.0
+    discontinuity_mask: Optional[np.ndarray] = None  # Shape (H, W), bool (True where step discontinuity detected)
+    plane_coeffs: Optional[Tuple[float, float, float, float]] = None  # Ground plane (a, b, c, d)
 
 
 @dataclass
