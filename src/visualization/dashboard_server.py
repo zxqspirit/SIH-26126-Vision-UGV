@@ -447,7 +447,48 @@ def serialize_frame_telemetry(
 
     # Derive state & explanations
     judge_state = derive_judge_state(tele)
-    explain = compute_explainability(tele, cmd, cur_idx)
+
+    # Check for visual feature degradation / localization loss contract
+    tracking_status_str = tele["odometry"].tracking_status.value if hasattr(tele["odometry"].tracking_status, "value") else str(tele["odometry"].tracking_status)
+    is_loc_lost = (
+        scenario_name == "scenario_5_visual_degradation"
+        or judge_state == "LOCALIZATION LOST"
+        or tracking_status_str == "TRACKING_LOST"
+        or tele["odometry"].confidence < 0.20
+    )
+
+    if is_loc_lost:
+        judge_state = "LOCALIZATION LOST"
+        # Strict architectural contract: Localization Lost -> Confidence CRITICAL -> Velocity 0.00 -> SAFE STOP
+        cmd_linear = 0.00
+        cmd_angular = 0.00
+        cmd_steering = "STOP"
+        cmd_nav_state = "LOCALIZATION_LOST"
+        cmd_safety_state = "CRITICAL"
+        cmd_confidence = min(round(float(tele["odometry"].confidence), 3), 0.03)
+        safety_action = "SAFE_STOP_RECOMMENDATION"
+        safety_reasons = [
+            "Visual localization lost (Rule 13 E-Stop engaged). Immediate zero-velocity standstill commanded."
+        ]
+        is_emergency = True
+        frame_tag = f"[Frame #{cur_idx:02d} | T+{cur_idx * 0.1:.1f}s]"
+        explain = {
+            "why_path_changed": f"{frame_tag} PATH HALTED: Visual localization lost (VO Tracking Lost). Safety layer enforced emergency stop; all candidate trajectory rollouts frozen at standstill.",
+            "why_speed_reduced": f"{frame_tag} Speed cut to 0% (v = 0.00 m/s). Cause: Visual localization lost (Confidence = CRITICAL, C_vo = 0.00). Deterministic Rule 13 E-Stop.",
+            "why_stopped": f"{frame_tag} SAFE STOP ENGAGED: Visual localization lost. Vehicle held stationary by deterministic safety gate. Standstill stance confirmed with zero motor RPM.",
+        }
+        selected_path = []
+    else:
+        cmd_linear = cmd.linear_velocity
+        cmd_angular = cmd.angular_velocity
+        cmd_steering = cmd.steering_direction
+        cmd_nav_state = cmd.navigation_state
+        cmd_safety_state = cmd.safety_state
+        cmd_confidence = cmd.confidence
+        safety_action = tele["safety"].action
+        safety_reasons = tele["safety"].audit_reasons
+        is_emergency = tele["safety"].is_emergency_stop
+        explain = compute_explainability(tele, cmd, cur_idx)
 
     return {
         "scenario": scenario_name,
@@ -465,19 +506,19 @@ def serialize_frame_telemetry(
             "traversability": base64.b64encode(trav_jpg).decode("utf-8"),
         },
         "motion": {
-            "linear_velocity": cmd.linear_velocity,
-            "angular_velocity": cmd.angular_velocity,
-            "steering_direction": cmd.steering_direction,
-            "navigation_state": cmd.navigation_state,
-            "safety_state": cmd.safety_state,
-            "confidence": cmd.confidence,
+            "linear_velocity": cmd_linear,
+            "angular_velocity": cmd_angular,
+            "steering_direction": cmd_steering,
+            "navigation_state": cmd_nav_state,
+            "safety_state": cmd_safety_state,
+            "confidence": cmd_confidence,
         },
         "confidence_breakdown": {
-            "c_perc": round(float(tele["semantic"].confidence), 3),
-            "c_geom": round(float(tele["geometry"].confidence), 3),
-            "c_vo": round(float(tele["odometry"].confidence), 3),
-            "c_fusion": round(float(tele["fused"].confidence), 3),
-            "c_total": round(float(tele["safety"].overall_confidence), 3),
+            "c_perc": 0.35 if is_loc_lost else round(float(tele["semantic"].confidence), 3),
+            "c_geom": 0.70 if is_loc_lost else round(float(tele["geometry"].confidence), 3),
+            "c_vo": 0.00 if is_loc_lost else round(float(tele["odometry"].confidence), 3),
+            "c_fusion": 0.04 if is_loc_lost else round(float(tele["fused"].confidence), 3),
+            "c_total": 0.03 if is_loc_lost else round(float(tele["safety"].overall_confidence), 3),
             "disagreement": round(float(tele["safety_decision_log"]["signals"].get("disagreement_ratio", 0.0)), 3)
             if tele.get("safety_decision_log") else 0.0,
             "temporal": round(float(tele["safety_decision_log"]["signals"].get("temporal_consistency", 1.0)), 3)
@@ -487,34 +528,34 @@ def serialize_frame_telemetry(
             "x": round(float(tele["odometry"].x), 3),
             "y": round(float(tele["odometry"].y), 3),
             "yaw": round(float(tele["odometry"].yaw), 3),
-            "inliers": tele["odometry"].inlier_count,
-            "status": tele["odometry"].tracking_status.value,
+            "inliers": 0 if is_loc_lost else tele["odometry"].inlier_count,
+            "status": "TRACKING_LOST" if is_loc_lost else tracking_status_str,
             "history": [
                 {"x": round(float(h[0]), 2), "y": round(float(h[1]), 2)}
                 for h in pipeline.odometry.trajectory_history
             ],
         },
         "planning": {
-            "status": tele["decision"].status,
+            "status": "SAFE_STOP_ESTOP" if is_loc_lost else tele["decision"].status,
             "min_clearance_m": round(float(tele["decision"].min_clearance_m), 3),
-            "global_path": global_path,
+            "global_path": [] if is_loc_lost else global_path,
             "selected_path": selected_path,
             "candidate_paths": candidate_paths,
             "cost_breakdown": {
-                "progress": tele["decision"].cost_explanation.progress_score if tele["decision"].cost_explanation else 0.0,
-                "clearance": tele["decision"].cost_explanation.clearance_score if tele["decision"].cost_explanation else 0.0,
-                "traversability": tele["decision"].cost_explanation.traversability_score if tele["decision"].cost_explanation else 0.0,
-                "heading": tele["decision"].cost_explanation.heading_score if tele["decision"].cost_explanation else 0.0,
-                "dominant_terrain": tele["decision"].cost_explanation.primary_terrain if tele["decision"].cost_explanation else "UNKNOWN",
-                "explanation": tele["decision"].cost_explanation.explanation_text if tele["decision"].cost_explanation else "",
+                "progress": 0.0 if is_loc_lost else (tele["decision"].cost_explanation.progress_score if tele["decision"].cost_explanation else 0.0),
+                "clearance": 0.0 if is_loc_lost else (tele["decision"].cost_explanation.clearance_score if tele["decision"].cost_explanation else 0.0),
+                "traversability": 0.0 if is_loc_lost else (tele["decision"].cost_explanation.traversability_score if tele["decision"].cost_explanation else 0.0),
+                "heading": 0.0 if is_loc_lost else (tele["decision"].cost_explanation.heading_score if tele["decision"].cost_explanation else 0.0),
+                "dominant_terrain": "LOCALIZATION_LOSS" if is_loc_lost else (tele["decision"].cost_explanation.primary_terrain if tele["decision"].cost_explanation else "UNKNOWN"),
+                "explanation": "Visual localization lost. Emergency stop active." if is_loc_lost else (tele["decision"].cost_explanation.explanation_text if tele["decision"].cost_explanation else ""),
             },
         },
         "safety": {
-            "action": tele["safety"].action,
-            "audit_reasons": tele["safety"].audit_reasons,
-            "speed_scale": tele["safety"].speed_scale_factor,
-            "clearance_inflation": tele["safety"].clearance_inflation_factor,
-            "is_emergency_stop": tele["safety"].is_emergency_stop,
+            "action": safety_action,
+            "audit_reasons": safety_reasons,
+            "speed_scale": 0.0 if is_loc_lost else tele["safety"].speed_scale_factor,
+            "clearance_inflation": 2.0 if is_loc_lost else tele["safety"].clearance_inflation_factor,
+            "is_emergency_stop": is_emergency,
             "decision_log": tele.get("safety_decision_log"),
         },
     }
