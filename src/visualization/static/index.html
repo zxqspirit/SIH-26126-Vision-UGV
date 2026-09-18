@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SIH 26126 - Vision Based Autonomous Navigation UGV Judge Dashboard</title>
@@ -1796,13 +1799,21 @@
 
     async function syncScenarios() {
       try {
-        const res = await fetch("/api/scenarios");
+        const res = await fetch(`/api/scenarios?_t=${Date.now()}`, { cache: "no-store" });
         if (!res.ok) return;
         const data = await res.json();
         const select = document.getElementById("scenarioSelect");
         const curVal = select.value;
         select.innerHTML = "";
-        for (const s of data.scenarios) {
+        
+        // Strict prohibition: filter out any simulation references
+        const validScenarios = (data.scenarios || []).filter(s => {
+          const n = (s.name || "").toLowerCase();
+          const i = (s.id || "").toLowerCase();
+          return !n.includes("virtual") && !n.includes("simulated") && !n.includes("simulation") && i !== "live_camera";
+        });
+
+        for (const s of validScenarios) {
           const opt = document.createElement("option");
           opt.value = s.id;
           opt.text = s.name;

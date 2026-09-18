@@ -45,7 +45,7 @@ if REPO_ROOT not in sys.path:
 from src.datasets.outdoor_dataset_loader import OutdoorDatasetLoader
 from src.interfaces.types import TrackingStatus
 from src.pipeline import NavigationPipeline
-from src.sensors.live_pipeline import LiveCameraStreamer, MockLiveCamera, ImageSequenceCamera
+from src.sensors.live_pipeline import LiveCameraStreamer, ImageSequenceCamera
 
 PORT = 5000
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -693,7 +693,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         super().__init__(*args, directory=STATIC_DIR, **kwargs)
 
     def end_headers(self) -> None:
-        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0")
         self.send_header("Pragma", "no-cache")
         self.send_header("Expires", "0")
         super().end_headers()
