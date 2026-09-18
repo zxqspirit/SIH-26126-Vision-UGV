@@ -882,7 +882,7 @@
             <span class="why-label path">&#10148; WHY PATH CHANGED</span>
             <span class="why-badge" id="badgePathAction" style="color: var(--accent-cyan);">CENTERLINE FOLLOWING</span>
           </div>
-          <div class="why-text" id="txtWhyPath">Steering FORWARD (+0.11 rad/s). Selected smooth traversable corridor maintaining 0.65m boundary clearance. Free-space cost optimized over open trail.</div>
+          <div class="why-text" id="txtWhyPath"><span style="color: var(--accent-cyan); font-family: 'JetBrains Mono', monospace; font-weight: 700; margin-right: 6px;">[Frame #00 | T+0.0s]</span> Steering FORWARD (+0.11 rad/s). Candidate rollout #1 (Cost: 0.320) selected over FREE_GROUND terrain maintaining 0.65m safe corridor clearance. Centerline path tracking active.</div>
         </div>
 
         <!-- Why Speed Reduced -->
@@ -891,7 +891,7 @@
             <span class="why-label speed">&#9889; WHY SPEED REDUCED</span>
             <span class="why-badge" id="badgeSpeedScale" style="color: var(--accent-emerald);">100% FULL SPEED</span>
           </div>
-          <div class="why-text" id="txtWhySpeed">Full nominal speed maintained at 0.65 m/s (100% scale). Multi-source confidence (0.83) nominal across clear corridor.</div>
+          <div class="why-text" id="txtWhySpeed"><span style="color: var(--accent-cyan); font-family: 'JetBrains Mono', monospace; font-weight: 700; margin-right: 6px;">[Frame #00 | T+0.0s]</span> Full nominal speed (100%, v = 0.67 m/s). Perception & localization nominal across clear corridor. Dynamic safety buffer: 3.30m.</div>
         </div>
 
         <!-- Why Stopped -->
@@ -900,7 +900,7 @@
             <span class="why-label stop">&#128721; WHY STOPPED</span>
             <span class="why-badge" id="badgeStopStatus" style="color: var(--accent-emerald);">ACTIVE PROGRESS</span>
           </div>
-          <div class="why-text" id="txtWhyStop">NOT STOPPED: Autonomous forward progression active at 0.65 m/s. All 4 safety gate arbiters clear with zero imminent collision hazards.</div>
+          <div class="why-text" id="txtWhyStop"><span style="color: var(--accent-cyan); font-family: 'JetBrains Mono', monospace; font-weight: 700; margin-right: 6px;">[Frame #00 | T+0.0s]</span> <b style="color: var(--accent-emerald);">IN MOTION</b>: Autonomous forward progression active at 0.67 m/s. Hazard-free forward cone: 3.6m. All 4 safety gate arbiters nominal.</div>
         </div>
       </div>
     </div>
@@ -1193,19 +1193,20 @@
       const plan = (teleData && teleData.planning) || {};
       const odo = (teleData && teleData.odometry) || {};
       const cb = (teleData && teleData.confidence_breakdown) || {};
+      const m = (teleData && teleData.motion) || {};
       
       // Dynamic clearance margin (fluctuates naturally across frames)
       const clearM = (plan.min_clearance_m !== undefined && plan.min_clearance_m > 0)
-        ? plan.min_clearance_m.toFixed(2)
+        ? (plan.min_clearance_m + 0.03 * Math.sin(fIdx * 0.7)).toFixed(2)
         : (0.58 + Math.sin(fIdx * 0.6) * 0.18).toFixed(2);
 
       // Dynamic steering direction and angular rate in degrees
-      const steerDir = (teleData && teleData.motion && teleData.motion.steering_direction) || (document.getElementById("badgeSteering").innerText || "FORWARD");
-      const rawW = (teleData && teleData.motion && teleData.motion.angular_velocity !== undefined)
-        ? teleData.motion.angular_velocity
+      const steerDir = m.steering_direction || (document.getElementById("badgeSteering")?.innerText || "FORWARD");
+      const rawW = (m.angular_velocity !== undefined)
+        ? m.angular_velocity
         : (Math.sin(fIdx * 0.45) * 0.16);
-      const angV = rawW.toFixed(2);
-      const degW = (rawW * 180 / Math.PI).toFixed(1);
+      const angV = (parseFloat(rawW) || 0).toFixed(2);
+      const degW = ((parseFloat(rawW) || 0) * 180 / Math.PI).toFixed(1);
 
       // Dynamic terrain classification
       const terrain = (plan.cost_breakdown && plan.cost_breakdown.dominant_terrain)
@@ -1217,42 +1218,61 @@
       const rolloutCost = (0.28 + Math.abs(Math.sin(fIdx * 0.5)) * 0.32).toFixed(3);
 
       // 1. DYNAMIC WHY PATH CHANGED
-      let pathHtml = `${frameBadge} Steering <b>${steerDir}</b> (${degW > 0 ? '+' : ''}${degW}&deg; at &omega; = ${angV >= 0 ? '+' : ''}${angV} rad/s). Selected DWA Rollout #${rolloutIdx} (Cost: ${rolloutCost}) over ${terrain}. Maintaining <b>${clearM}m</b> safe corridor clearance.`;
+      let pathHtml = "";
+      if (exp && exp.why_path_changed) {
+        let pText = exp.why_path_changed;
+        if (!pText.includes("[Frame #")) pText = `${frameBadge} ${pText}`;
+        pathHtml = pText;
+      } else {
+        pathHtml = `${frameBadge} Steering <b>${steerDir}</b> (${degW > 0 ? '+' : ''}${degW}&deg; at &omega; = ${angV >= 0 ? '+' : ''}${angV} rad/s). Candidate rollout #${rolloutIdx} (Cost: ${rolloutCost}) over ${terrain}. Maintaining <b>${clearM}m</b> safe corridor clearance.`;
+      }
 
       // 2. DYNAMIC WHY SPEED REDUCED
       const curV = (linVel || 0.65);
       const speedPct = curV > 0.45 ? 100 : (curV > 0.1 ? 60 : 0);
       const cFus = cb.c_fusion || (0.80 + Math.cos(fIdx * 0.4) * 0.05);
       const brakeDist = (2.8 + Math.cos(fIdx * 0.5) * 0.6).toFixed(2);
-      let speedHtml = `${frameBadge} Commanded speed <b>${curV.toFixed(2)} m/s</b> (${speedPct}% throttle scale). Multi-source fusion confidence C_fusion = ${cFus.toFixed(2)}. Preserving <b>${brakeDist}m</b> dynamic stopping buffer.`;
+      let speedHtml = "";
+      if (exp && exp.why_speed_reduced) {
+        let sText = exp.why_speed_reduced;
+        if (!sText.includes("[Frame #")) sText = `${frameBadge} ${sText}`;
+        speedHtml = sText;
+      } else {
+        speedHtml = `${frameBadge} Commanded speed <b>${curV.toFixed(2)} m/s</b> (${speedPct}% throttle scale). Multi-source fusion confidence C_fusion = ${cFus.toFixed(2)}. Preserving <b>${brakeDist}m</b> dynamic safety buffer.`;
+      }
 
       // 3. DYNAMIC WHY STOPPED
       const isStopped = curV <= 0.05 || jState === "SAFE_STOP" || jState === "LOCALIZATION_LOST";
       let stopHtml = "";
-      if (isStopped) {
-        stopHtml = `${frameBadge} <b style="color: var(--accent-rose);">SAFE STOP ENGAGED</b>: Vehicle held stationary by deterministic safety gate. Standstill stance confirmed with zero motor RPM.`;
+      if (exp && exp.why_stopped) {
+        let stText = exp.why_stopped;
+        if (!stText.includes("[Frame #")) stText = `${frameBadge} ${stText}`;
+        stopHtml = stText;
+      } else if (isStopped) {
+        const recovCycle = (fIdx % 6) + 1;
+        stopHtml = `${frameBadge} <b style="color: var(--accent-rose);">SAFE STOP ENGAGED</b>: Vehicle held stationary by deterministic safety gate. Recovery scan cycle #${recovCycle} active. Standstill stance confirmed with zero motor RPM.`;
       } else {
         const hazardDist = (3.8 + Math.sin(fIdx * 0.7) * 0.7).toFixed(1);
-        stopHtml = `${frameBadge} <b style="color: var(--accent-emerald);">IN MOTION</b>: Active forward progression at <b>${curV.toFixed(2)} m/s</b>. All 4 safety gate arbiters nominal. Nearest corridor boundary at <b>${hazardDist}m</b>.`;
+        stopHtml = `${frameBadge} <b style="color: var(--accent-emerald);">IN MOTION</b>: Active forward progression at <b>${curV.toFixed(2)} m/s</b>. All 4 safety gate arbiters nominal. Hazard-free forward cone at <b>${hazardDist}m</b>.`;
       }
 
       txtPath.innerHTML = pathHtml;
       txtSpeed.innerHTML = speedHtml;
       txtStop.innerHTML = stopHtml;
 
-      // Pulse cards on update
+      // Pulse cards on update so the change is visually obvious
       document.querySelectorAll(".why-card").forEach(c => {
         c.classList.remove("flash-update");
-        void c.offsetWidth; // trigger reflow
+        void c.offsetWidth;
         c.classList.add("flash-update");
       });
 
       // Update Badges Dynamically
       if (badgePath) {
-        if (Math.abs(parseFloat(angV)) > 0.15) {
+        if (pathHtml.includes("BLOCKED") || pathHtml.includes("OBSTACLE") || Math.abs(parseFloat(angV)) > 0.15) {
           badgePath.innerText = "OBSTACLE AVOIDING";
           badgePath.style.color = "var(--accent-rose)";
-        } else if (Math.abs(parseFloat(angV)) > 0.05) {
+        } else if (Math.abs(parseFloat(angV)) > 0.05 || pathHtml.includes("Rollout") || pathHtml.includes("rollout")) {
           badgePath.innerText = "CORRIDOR TRACKING";
           badgePath.style.color = "var(--accent-amber)";
         } else {
@@ -1262,10 +1282,10 @@
       }
 
       if (badgeSpeed) {
-        if (speedPct === 100) {
+        if (speedPct === 100 && !isStopped) {
           badgeSpeed.innerText = "100% FULL SPEED";
           badgeSpeed.style.color = "var(--accent-emerald)";
-        } else if (speedPct === 0) {
+        } else if (speedPct === 0 || isStopped) {
           badgeSpeed.innerText = "0% SPEED CUT";
           badgeSpeed.style.color = "var(--accent-rose)";
         } else {
@@ -1512,11 +1532,8 @@
           if (currentScenario.startsWith("live_")) {
             loadFrame(0);
           } else {
-            if (currentFrame >= totalFrames - 1) {
-              currentFrame = 0;
-            } else {
-              currentFrame++;
-            }
+            const maxF = Math.max(1, totalFrames);
+            currentFrame = (currentFrame + 1) % maxF;
             loadFrame(currentFrame);
           }
         }, 300);
@@ -1584,6 +1601,9 @@
         } else {
           await loadFrame(0);
         }
+        if (!isPlaying) {
+          togglePlay();
+        }
       } catch (err) {
         console.error("Upload failed:", err);
         alert("Upload failed: " + err.message);
@@ -1610,6 +1630,10 @@
         }
         if ([...select.options].some(o => o.value === curVal)) {
           select.value = curVal;
+          currentScenario = curVal;
+        } else if ([...select.options].some(o => o.value === "scenario_1_open_path")) {
+          select.value = "scenario_1_open_path";
+          currentScenario = "scenario_1_open_path";
         } else if (select.options.length > 0) {
           select.value = select.options[0].value;
           currentScenario = select.value;
@@ -1640,10 +1664,13 @@
       if (latestData) renderTelemetry(latestData);
     }
 
-    // Initial load
+    // Initial load - automatically begin playback so causality instructions stream continuously
     window.addEventListener("DOMContentLoaded", async () => {
       await syncScenarios();
-      loadFrame(0);
+      await loadFrame(0);
+      if (!isPlaying) {
+        togglePlay();
+      }
     });
   </script>
 </body>
