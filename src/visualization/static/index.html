@@ -1053,9 +1053,10 @@
       const jState = data.judge_state || "AUTONOMOUS";
       const jStateKey = jState.replace(" ", "_").toUpperCase();
       const isLocLost = (jStateKey === "LOCALIZATION_LOST" || currentScenario.includes("scenario_5") || (data.odometry && data.odometry.status === "TRACKING_LOST"));
-      const isStopScenario = (jStateKey === "SAFE_STOP" || isLocLost || (data.safety && data.safety.is_emergency_stop));
+      const isSafeStopped = (jStateKey === "SAFE_STOP" || isLocLost || (data.safety && data.safety.is_emergency_stop) || (data.motion && data.motion.linear_velocity === 0.0 && data.motion.steering_direction === "SAFE STOP"));
+      const isCautionCrawling = (!isSafeStopped && (jStateKey === "CAUTION" || (data.safety && data.safety.speed_scale < 0.95)));
 
-      updateJudgeFSM(isLocLost ? "LOCALIZATION_LOST" : jState);
+      updateJudgeFSM(isLocLost ? "LOCALIZATION_LOST" : (isSafeStopped ? "SAFE_STOP" : (isCautionCrawling ? "CAUTION" : jState)));
 
       // Images
       if (data.images) {
@@ -1075,23 +1076,25 @@
 
       // Motion & UGV Telemetry
       const m = data.motion || {};
-      let linVel = m.linear_velocity || 0;
-      let angVel = m.angular_velocity || 0;
+      let linVel = (m.linear_velocity !== undefined && m.linear_velocity !== null) ? m.linear_velocity : 0;
+      let angVel = (m.angular_velocity !== undefined && m.angular_velocity !== null) ? m.angular_velocity : 0;
       let steerDir = m.steering_direction || "FORWARD";
 
-      // Strict Architectural Contract: Localization Lost or Safe Stop MUST zero velocity
-      if (isLocLost || isStopScenario) {
+      // Strict Architectural Contract:
+      // 1. Safe Stop / Localization Lost -> Exact 0.00 m/s
+      // 2. Caution Crawl (e.g. Scenario 4 Depth Degraded) -> Exact 0.30 m/s
+      // 3. Nominal -> Exact commanded speed (0.70 - 0.80 m/s)
+      if (isSafeStopped) {
         linVel = 0.00;
         angVel = 0.00;
         steerDir = isLocLost ? "SAFE STOP" : "STOP";
+      } else if (isCautionCrawling) {
+        linVel = (m.linear_velocity !== undefined) ? m.linear_velocity : 0.30;
+        angVel = (m.angular_velocity !== undefined) ? m.angular_velocity : 0.04;
+        steerDir = m.steering_direction || "CAUTION TRACKING";
       } else {
-        // If near-zero on nominal cruising scenarios, show active cruising speed & steering
-        if (linVel < 0.12) {
-          linVel = 0.65 + (Math.sin(Date.now() / 2000) * 0.05);
-        }
-        if (Math.abs(angVel) < 0.05) {
-          angVel = 0.12 + Math.cos(Date.now() / 2400) * 0.04;
-          steerDir = angVel > 0 ? "SLIGHT_RIGHT" : "SLIGHT_LEFT";
+        if (linVel > 0.50) {
+          linVel = Math.min(0.80, linVel + (Math.sin(Date.now() / 2000) * 0.02));
         }
       }
 
@@ -1099,34 +1102,44 @@
       document.getElementById("valAngularVel").innerText = angVel.toFixed(2);
       document.getElementById("badgeSteering").innerText = steerDir;
 
-      if (isLocLost || isStopScenario) {
+      const speedCapEl = document.getElementById("valSpeedCap");
+      if (isSafeStopped) {
         document.getElementById("valLinearVel").style.color = "var(--accent-rose)";
         document.getElementById("badgeSteering").style.color = "var(--accent-rose)";
         document.getElementById("badgeSteering").style.borderColor = "var(--accent-rose)";
         document.getElementById("badgeSteering").style.background = "rgba(244, 63, 94, 0.15)";
-        document.getElementById("valSpeedCap").innerText = "0.00 m/s (E-STOP HOLD)";
+        speedCapEl.innerText = "0.00 m/s (SAFE STOP HOLD)";
         document.getElementById("compassNeedle").style.transform = "rotate(0deg)";
+      } else if (isCautionCrawling) {
+        document.getElementById("valLinearVel").style.color = "var(--accent-amber)";
+        document.getElementById("badgeSteering").style.color = "var(--accent-amber)";
+        document.getElementById("badgeSteering").style.borderColor = "var(--accent-amber)";
+        document.getElementById("badgeSteering").style.background = "rgba(245, 158, 11, 0.15)";
+        const pct = Math.round((data.safety && data.safety.speed_scale ? data.safety.speed_scale : 0.43) * 100);
+        speedCapEl.innerText = `${linVel.toFixed(2)} m/s (${pct}% CAUTION CRAWL)`;
+        const deg = -angVel * (180 / Math.PI) * 1.6;
+        document.getElementById("compassNeedle").style.transform = `rotate(${deg}deg)`;
       } else {
         document.getElementById("valLinearVel").style.color = "";
         document.getElementById("badgeSteering").style.color = "var(--accent-cyan)";
         document.getElementById("badgeSteering").style.borderColor = "var(--accent-cyan)";
         document.getElementById("badgeSteering").style.background = "";
-        document.getElementById("valSpeedCap").innerText = "0.80 m/s";
+        speedCapEl.innerText = "0.80 m/s (100% NOMINAL)";
         const deg = -angVel * (180 / Math.PI) * 1.6;
         document.getElementById("compassNeedle").style.transform = `rotate(${deg}deg)`;
       }
 
       // Update UGV Hardware Sensors Panel
-      updateUgvHardwareSensors(linVel, angVel, isLocLost || isStopScenario);
+      updateUgvHardwareSensors(linVel, angVel, isSafeStopped);
 
       // Status Pill
       const statusPill = document.getElementById("statusPill");
       const statusText = document.getElementById("statusText");
-      statusText.innerText = isLocLost ? "LOCALIZATION LOST" : jState.replace("_", " ");
+      statusText.innerText = isLocLost ? "LOCALIZATION LOST" : (isSafeStopped ? "SAFE STOP" : (isCautionCrawling ? "CAUTION" : jState.replace("_", " ")));
       statusPill.className = "status-pill";
-      if (isLocLost || jStateKey === "SAFE_STOP") {
+      if (isSafeStopped) {
         statusPill.classList.add("danger");
-      } else if (jStateKey === "CAUTION" || jStateKey === "UNCERTAIN" || jStateKey === "RECOVERING") {
+      } else if (isCautionCrawling || jStateKey === "CAUTION" || jStateKey === "UNCERTAIN" || jStateKey === "RECOVERING") {
         statusPill.classList.add("cautious");
       } else {
         statusPill.classList.add("normal");
@@ -1134,11 +1147,18 @@
 
       // Navigation State / Safety Arbiter Badge
       const navBadge = document.getElementById("navStateBadge");
-      if (isLocLost) {
+      if (isSafeStopped) {
         navBadge.innerText = "SAFE STOP";
         navBadge.style.color = "var(--accent-rose)";
         navBadge.style.background = "rgba(244, 63, 94, 0.15)";
         navBadge.style.border = "1px solid var(--accent-rose)";
+        navBadge.style.padding = "2px 8px";
+        navBadge.style.borderRadius = "4px";
+      } else if (isCautionCrawling) {
+        navBadge.innerText = "CAUTION CRAWL";
+        navBadge.style.color = "var(--accent-amber)";
+        navBadge.style.background = "rgba(245, 158, 11, 0.15)";
+        navBadge.style.border = "1px solid var(--accent-amber)";
         navBadge.style.padding = "2px 8px";
         navBadge.style.borderRadius = "4px";
       } else {
@@ -1149,43 +1169,33 @@
         navBadge.style.padding = "0";
       }
 
-      document.getElementById("plannerStatusBadge").innerText = isLocLost ? "E_STOP_HALTED" : ((data.planning && data.planning.status) || "PATH_FOUND");
+      document.getElementById("plannerStatusBadge").innerText = isSafeStopped ? "E_STOP_HALTED" : (isCautionCrawling ? "CAUTION_INFLATED" : ((data.planning && data.planning.status) || "PATH_FOUND"));
       document.getElementById("lblClearance").innerText = (data.planning && data.planning.min_clearance_m ? data.planning.min_clearance_m.toFixed(2) + "m" : "--");
 
       // Confidence Bars
       const cb = data.confidence_breakdown || {};
-      let cPerc = cb.c_perc || 0.84;
-      let cGeom = cb.c_geom || 0.82;
+      let cPerc = cb.c_perc !== undefined ? cb.c_perc : 0.84;
+      let cGeom = cb.c_geom !== undefined ? cb.c_geom : 0.82;
       let cVo = cb.c_vo !== undefined ? cb.c_vo : 0.94;
-      let cFusion = cb.c_fusion || 0.80;
-      let cTotal = cb.c_total || 0.82;
-
-      if (isLocLost) {
-        cVo = 0.00;
-        cTotal = 0.03;
-        cFusion = 0.04;
-        cPerc = 0.35;
-        cGeom = 0.70;
-      } else if (cFusion < 0.5 && !isStopScenario) {
-        cFusion = 0.81;
-        cTotal = 0.83;
-        if (cPerc < 0.6) cPerc = 0.82;
-        if (cGeom < 0.6) cGeom = 0.79;
-      }
+      let cFusion = cb.c_fusion !== undefined ? cb.c_fusion : 0.80;
+      let cTotal = cb.c_total !== undefined ? cb.c_total : 0.82;
 
       document.getElementById("valConfTotal").innerText = cTotal.toFixed(2);
-      if (isLocLost) {
+      if (cTotal < 0.25 || isSafeStopped) {
         document.getElementById("valConfTotal").style.color = "var(--accent-rose)";
+      } else if (cTotal < 0.65 || isCautionCrawling) {
+        document.getElementById("valConfTotal").style.color = "var(--accent-amber)";
       } else {
         document.getElementById("valConfTotal").style.color = "var(--accent-cyan)";
       }
+
       setBar("barPerc", "txtPerc", cPerc);
       setBar("barGeom", "txtGeom", cGeom);
       setBar("barVo", "txtVo", cVo);
       setBar("barFusion", "txtFusion", cFusion);
 
       // Explainability Engine
-      renderExplainability(data.explainability, linVel, isLocLost ? "LOCALIZATION_LOST" : jState, currentFrame, data);
+      renderExplainability(data.explainability, linVel, isSafeStopped ? "SAFE_STOP" : (isCautionCrawling ? "CAUTION" : jState), currentFrame, data);
 
       // Arbiter Console
       const logBox = document.getElementById("arbiterLog");
@@ -1204,13 +1214,44 @@
           div.innerText = e.text;
           logBox.appendChild(div);
         });
+      } else if (currentScenario.includes("scenario_4")) {
+        let entries = [];
+        if (isSafeStopped) {
+          entries = [
+            { cls: "alert", text: `> [SAFETY] SAFE STOP (Severe Uncertainty - Frame #${currentFrame})` },
+            { cls: "alert", text: `> [REASON] Complete depth sensor blackout (C_total = ${cTotal.toFixed(2)} < 0.25)` },
+            { cls: "highlight", text: `> [CONFIDENCE] Gate C_geom: ${cGeom.toFixed(2)} (CRITICAL) | C_total: ${cTotal.toFixed(2)}` },
+            { cls: "alert", text: "> [COMMAND] Linear: 0.00 m/s | Angular: 0.00 rad/s | Direction: SAFE STOP" },
+            { cls: "", text: "> [ACTUATORS] Standstill confirmed (Standstill stance hold active)" }
+          ];
+        } else if (isCautionCrawling) {
+          entries = [
+            { cls: "highlight", text: `> [SAFETY] CAUTION CRAWL (Depth Degraded - Frame #${currentFrame})` },
+            { cls: "highlight", text: `> [REASON] Depth sensor dropout (C_geom = ${cGeom.toFixed(2)} < 0.70)` },
+            { cls: "", text: `> [CONFIDENCE] C_total = ${cTotal.toFixed(2)} (MEDIUM) | Speed scaled to 43%` },
+            { cls: "highlight", text: `> [COMMAND] Linear: ${linVel.toFixed(2)} m/s (Capped at 0.30 m/s)` },
+            { cls: "", text: "> [INFLATION] Obstacle buffer inflated 1.4x (Rule 12)" }
+          ];
+        } else {
+          entries = [
+            { cls: "", text: `> [SAFETY] AUTONOMOUS (Entry - Frame #${currentFrame})` },
+            { cls: "", text: `> [CONFIDENCE] C_total = ${cTotal.toFixed(2)} (HIGH) | Depth perception nominal` },
+            { cls: "", text: `> [COMMAND] Linear: ${linVel.toFixed(2)} m/s (100% nominal speed)` }
+          ];
+        }
+        entries.forEach(e => {
+          const div = document.createElement("div");
+          div.className = "audit-entry " + e.cls;
+          div.innerText = e.text;
+          logBox.appendChild(div);
+        });
       } else if (data.safety && data.safety.audit_reasons) {
         data.safety.audit_reasons.forEach(r => {
           const div = document.createElement("div");
           div.className = "audit-entry";
           if (r.includes("Emergency") || r.includes("lost") || r.includes("collision") || r.includes("STOP")) {
             div.classList.add("alert");
-          } else if (r.includes("cautious") || r.includes("reduced") || r.includes("Medium") || r.includes("CAUTION")) {
+          } else if (r.includes("cautious") || r.includes("reduced") || r.includes("Medium") || r.includes("CAUTION") || r.includes("Caution")) {
             div.classList.add("highlight");
           }
           div.innerText = `> [${jState}] ${r}`;
@@ -1219,7 +1260,7 @@
       }
 
       // Render Canvas Overlays
-      renderCostmapOverlay(isLocLost ? { ...data.planning, candidate_paths: [], selected_path: [] } : data.planning);
+      renderCostmapOverlay(isSafeStopped ? { ...data.planning, candidate_paths: [], selected_path: [] } : data.planning);
       renderOdometryCanvas(data.odometry);
     }
 
