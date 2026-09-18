@@ -300,13 +300,15 @@ def derive_judge_state(tele: Dict[str, Any]) -> str:
     return "AUTONOMOUS"
 
 
-def compute_explainability(tele: Dict[str, Any], cmd: Any) -> Dict[str, str]:
-    """Extract causal explanations directly from backend decision and safety logs."""
+def compute_explainability(tele: Dict[str, Any], cmd: Any, cur_idx: int = 0) -> Dict[str, str]:
+    """Extract causal explanations directly from backend decision and safety logs with frame indexing."""
     decision = tele["decision"]
     safety = tele["safety"]
     cost_exp = decision.cost_explanation
     dominant_terrain = cost_exp.primary_terrain if cost_exp else "TRAVERSABLE"
     explanation_txt = cost_exp.explanation_text if cost_exp else ""
+
+    frame_tag = f"[Frame #{cur_idx:02d} | T+{cur_idx * 0.1:.1f}s]"
 
     # 1. WHY PATH CHANGED
     steer_val = decision.recommended_steering
@@ -314,12 +316,12 @@ def compute_explainability(tele: Dict[str, Any], cmd: Any) -> Dict[str, str]:
 
     if decision.status == "OBSTACLE_BLOCKED":
         why_path = (
-            f"DIRECT PATH BLOCKED: Positive obstacle detected in forward corridor. "
+            f"{frame_tag} DIRECT PATH BLOCKED: Positive obstacle detected in forward corridor. "
             f"Evasive steering commanded to preserve {decision.min_clearance_m:.2f}m boundary clearance."
         )
     else:
         why_path = (
-            f"Steering {steering_str} (w = {decision.recommended_angular_velocity:+.2f} rad/s). "
+            f"{frame_tag} Steering {steering_str} (w = {decision.recommended_angular_velocity:+.2f} rad/s). "
             f"Trajectory selected over {dominant_terrain} terrain maintaining {decision.min_clearance_m:.2f}m clearance. "
             f"{explanation_txt}"
         )
@@ -329,12 +331,12 @@ def compute_explainability(tele: Dict[str, Any], cmd: Any) -> Dict[str, str]:
     if speed_scale < 0.99:
         primary_reason = safety.audit_reasons[0] if safety.audit_reasons else "Speed reduced under uncertainty"
         why_speed = (
-            f"Speed scaled to {speed_scale * 100:.0f}% (v = {safety.commanded_linear_velocity:.2f} m/s). "
+            f"{frame_tag} Speed scaled to {speed_scale * 100:.0f}% (v = {safety.commanded_linear_velocity:.2f} m/s). "
             f"Cause: {primary_reason}"
         )
     else:
         why_speed = (
-            f"Full nominal speed (100%, v = {safety.commanded_linear_velocity:.2f} m/s). "
+            f"{frame_tag} Full nominal speed (100%, v = {safety.commanded_linear_velocity:.2f} m/s). "
             f"Perception and localization confidences nominal across clear corridor."
         )
 
@@ -347,9 +349,9 @@ def compute_explainability(tele: Dict[str, Any], cmd: Any) -> Dict[str, str]:
             stop_reason = safety.audit_reasons[0]
         else:
             stop_reason = "Vehicle stopped by safety gate"
-        why_stopped = f"STOPPED / SAFE HOLD: {stop_reason}"
+        why_stopped = f"{frame_tag} STOPPED / SAFE HOLD: {stop_reason}"
     else:
-        why_stopped = f"NOT STOPPED: Forward progression active at {safety.commanded_linear_velocity:.2f} m/s."
+        why_stopped = f"{frame_tag} NOT STOPPED: Forward progression active at {safety.commanded_linear_velocity:.2f} m/s."
 
     return {
         "why_path_changed": why_path,
@@ -435,7 +437,7 @@ def serialize_frame_telemetry(
 
     # Derive state & explanations
     judge_state = derive_judge_state(tele)
-    explain = compute_explainability(tele, cmd)
+    explain = compute_explainability(tele, cmd, cur_idx)
 
     return {
         "scenario": scenario_name,
