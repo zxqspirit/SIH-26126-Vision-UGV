@@ -1,0 +1,201 @@
+[
+  {
+    "scenario_name": "scenario_1_open_path",
+    "test_id": "LOC-01",
+    "test_condition": "High texture (grass + structures)",
+    "total_frames": 15,
+    "total_distance_m": 0.0197,
+    "tracking_ok_frames": 15,
+    "tracking_degraded_frames": 0,
+    "tracking_lost_frames": 0,
+    "tracking_duration_before_first_loss": 15,
+    "tracking_loss_events": 0,
+    "recovery_events": 0,
+    "recovery_times_frames": [],
+    "mean_recovery_time": 0.0,
+    "relocalization_states": {
+      "TRACKING": 15
+    },
+    "mean_inlier_count": 346.5,
+    "min_confidence": 0.7502,
+    "mean_confidence": 0.9584,
+    "mean_latency_ms": 3.84,
+    "p95_latency_ms": 6.93,
+    "p99_latency_ms": 10.76,
+    "fps": 127.1,
+    "ate_rmse_m": 0.6447,
+    "final_position": [
+      -0.0165,
+      0.0086,
+      -0.0012
+    ],
+    "status": "PASS"
+  },
+  {
+    "scenario_name": "scenario_2_sudden_obstacle",
+    "test_id": "LOC-02",
+    "test_condition": "Sudden obstacle (mixed terrain)",
+    "total_frames": 15,
+    "total_distance_m": 0.0025,
+    "tracking_ok_frames": 15,
+    "tracking_degraded_frames": 0,
+    "tracking_lost_frames": 0,
+    "tracking_duration_before_first_loss": 15,
+    "tracking_loss_events": 0,
+    "recovery_events": 0,
+    "recovery_times_frames": [],
+    "mean_recovery_time": 0.0,
+    "relocalization_states": {
+      "TRACKING": 15
+    },
+    "mean_inlier_count": 342.6,
+    "min_confidence": 0.9378,
+    "mean_confidence": 0.9582,
+    "mean_latency_ms": 3.17,
+    "p95_latency_ms": 3.96,
+    "p99_latency_ms": 4.75,
+    "fps": 116.3,
+    "ate_rmse_m": 0.6474,
+    "final_position": [
+      -0.0018,
+      -0.0005,
+      -0.0001
+    ],
+    "status": "PASS"
+  },
+  {
+    "scenario_name": "scenario_3_terrain_boundary",
+    "test_id": "LOC-03",
+    "test_condition": "Vegetation boundary (texture transition)",
+    "total_frames": 15,
+    "total_distance_m": 0.0027,
+    "tracking_ok_frames": 15,
+    "tracking_degraded_frames": 0,
+    "tracking_lost_frames": 0,
+    "tracking_duration_before_first_loss": 15,
+    "tracking_loss_events": 0,
+    "recovery_events": 0,
+    "recovery_times_frames": [],
+    "mean_recovery_time": 0.0,
+    "relocalization_states": {
+      "TRACKING": 15
+    },
+    "mean_inlier_count": 361.8,
+    "min_confidence": 0.9557,
+    "mean_confidence": 0.9709,
+    "mean_latency_ms": 2.97,
+    "p95_latency_ms": 3.89,
+    "p99_latency_ms": 4.86,
+    "fps": 118.6,
+    "ate_rmse_m": 0.6472,
+    "final_position": [
+      -0.0014,
+      0.0019,
+      0.0004
+    ],
+    "status": "PASS"
+  },
+  {
+    "scenario_name": "scenario_4_depth_degradation",
+    "test_id": "LOC-04",
+    "test_condition": "Depth degradation (lighting change analog)",
+    "total_frames": 15,
+    "total_distance_m": 0.0044,
+    "tracking_ok_frames": 15,
+    "tracking_degraded_frames": 0,
+    "tracking_lost_frames": 0,
+    "tracking_duration_before_first_loss": 15,
+    "tracking_loss_events": 0,
+    "recovery_events": 0,
+    "recovery_times_frames": [],
+    "mean_recovery_time": 0.0,
+    "relocalization_states": {
+      "TRACKING": 15
+    },
+    "mean_inlier_count": 378.7,
+    "min_confidence": 0.98,
+    "mean_confidence": 0.98,
+    "mean_latency_ms": 2.7,
+    "p95_latency_ms": 3.41,
+    "p99_latency_ms": 4.06,
+    "fps": 124.9,
+    "ate_rmse_m": 0.6468,
+    "final_position": [
+      -0.0033,
+      0.0024,
+      0.0003
+    ],
+    "status": "PASS"
+  },
+  {
+    "scenario_name": "scenario_5_visual_degradation",
+    "test_id": "LOC-05",
+    "test_condition": "Visual degradation (low texture + obstruction)",
+    "total_frames": 15,
+    "total_distance_m": 0.0038,
+    "tracking_ok_frames": 5,
+    "tracking_degraded_frames": 0,
+    "tracking_lost_frames": 10,
+    "tracking_duration_before_first_loss": 1,
+    "tracking_loss_events": 5,
+    "recovery_events": 4,
+    "recovery_times_frames": [
+      2,
+      2,
+      2,
+      2
+    ],
+    "mean_recovery_time": 2.0,
+    "relocalization_states": {
+      "TRACKING": 1,
+      "TRACKING_LOST": 10,
+      "RECOVERED": 4
+    },
+    "mean_inlier_count": 117.5,
+    "min_confidence": 0.05,
+    "mean_confidence": 0.3614,
+    "mean_latency_ms": 9.45,
+    "p95_latency_ms": 13.72,
+    "p99_latency_ms": 13.81,
+    "fps": 79.6,
+    "ate_rmse_m": 0.2108,
+    "final_position": [
+      -0.0034,
+      0.0002,
+      -0.0001
+    ],
+    "status": "FAIL"
+  },
+  {
+    "scenario_name": "scenario_1_open_path",
+    "test_id": "LOC-06",
+    "test_condition": "Camera vibration (synthetic jitter)",
+    "total_frames": 15,
+    "total_distance_m": 0.1478,
+    "tracking_ok_frames": 15,
+    "tracking_degraded_frames": 0,
+    "tracking_lost_frames": 0,
+    "tracking_duration_before_first_loss": 15,
+    "tracking_loss_events": 0,
+    "recovery_events": 0,
+    "recovery_times_frames": [],
+    "mean_recovery_time": 0.0,
+    "relocalization_states": {
+      "TRACKING": 15
+    },
+    "mean_inlier_count": 206.3,
+    "min_confidence": 0.7407,
+    "mean_confidence": 0.8737,
+    "mean_latency_ms": 5.76,
+    "p95_latency_ms": 10.12,
+    "p99_latency_ms": 10.51,
+    "fps": 85.6,
+    "ate_rmse_m": 0.6351,
+    "final_position": [
+      -0.0334,
+      0.0438,
+      0.0887
+    ],
+    "status": "PASS"
+  }
+]

@@ -19,6 +19,15 @@ class TrackingStatus(str, Enum):
     TRACKING_LOST = "TRACKING_LOST"
 
 
+class RelocalizationState(str, Enum):
+    """State machine for visual relocalization tracking."""
+    INITIALIZING = "INITIALIZING"
+    TRACKING = "TRACKING"
+    TRACKING_LOST = "TRACKING_LOST"
+    RELOCALIZATION_ATTEMPT = "RELOCALIZATION_ATTEMPT"
+    RECOVERED = "RECOVERED"
+
+
 class SafetyState(str, Enum):
     """Deterministic safety states for confidence-based degradation."""
     HIGH_CONFIDENCE = "HIGH_CONFIDENCE"
@@ -144,6 +153,9 @@ class VisualOdometryResult:
     tracking_status: TrackingStatus = TrackingStatus.TRACKING_OK
     confidence: float = 1.0  # Scalar in [0.0, 1.0] based on inlier count & optical flow
     latency_ms: float = 0.0
+    relocalization_state: str = "INITIALIZING"  # RelocalizationState value
+    consecutive_lost_frames: int = 0
+    recovery_frame_count: int = 0  # Frames since last recovery (0 if never recovered)
 
 
 @dataclass
