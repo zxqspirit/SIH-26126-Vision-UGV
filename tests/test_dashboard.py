@@ -414,3 +414,82 @@ def test_dashboard_upload_image_and_video():
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_dashboard_batch_multi_image_upload():
+    """Test POST /api/upload with a batch of multiple images (up to 60 frames) creating a sequence."""
+    import cv2
+    server = ThreadingHTTPServer(("127.0.0.1", 0), DashboardHandler)
+    port = server.server_port
+
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+    base_url = f"http://127.0.0.1:{port}"
+
+    try:
+        # Create 3 synthetic sequential frames
+        boundary = "----WebKitFormBoundaryBatchTest60"
+        c_type = f"multipart/form-data; boundary={boundary}"
+        parts = []
+
+        for i in range(3):
+            img = np.zeros((480, 640, 3), dtype=np.uint8)
+            img[240:, :] = [20 + i * 15, 130 + i * 10, 20]
+            img[:240, :] = [240, 210, 140]
+            success, enc = cv2.imencode(".jpg", img)
+            assert success
+
+            parts.extend([
+                f"--{boundary}".encode("utf-8"),
+                f'Content-Disposition: form-data; name="file"; filename="test_seq_frame_{i:02d}.jpg"'.encode("utf-8"),
+                b'Content-Type: image/jpeg',
+                b'',
+                enc.tobytes(),
+            ])
+        parts.extend([f"--{boundary}--".encode("utf-8"), b''])
+        body = b"\r\n".join(parts)
+
+        # POST /api/upload with 3 frames
+        req = urllib.request.Request(
+            f"{base_url}/api/upload",
+            data=body,
+            headers={
+                "Content-Type": c_type,
+                "Content-Length": str(len(body)),
+            },
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            assert resp.status == 200
+            data = json.loads(resp.read().decode("utf-8"))
+            assert data["status"] == "success"
+            assert data["scenario_id"] == "uploaded_sequence"
+            assert data["media_type"] == "sequence"
+            assert data["total_frames"] == 3
+            assert "telemetry" in data
+            assert data["telemetry"]["frame_id"] == 0
+            assert "judge_state" in data["telemetry"]
+            assert "explainability" in data["telemetry"]
+
+        # Check /api/scenarios contains uploaded_sequence
+        req_scen = urllib.request.urlopen(f"{base_url}/api/scenarios", timeout=5)
+        scen_data = json.loads(req_scen.read().decode("utf-8"))
+        scen_ids = [s["id"] for s in scen_data["scenarios"]]
+        assert "uploaded_sequence" in scen_ids
+
+        # Query frame 1 and frame 2
+        for f_idx in [1, 2]:
+            req_f = urllib.request.urlopen(
+                f"{base_url}/api/telemetry?scenario=uploaded_sequence&frame={f_idx}",
+                timeout=10
+            )
+            assert req_f.status == 200
+            f_data = json.loads(req_f.read().decode("utf-8"))
+            assert f_data["frame_id"] == f_idx
+            assert f_data["scenario"] == "uploaded_sequence"
+            assert "judge_state" in f_data
+            assert "motion" in f_data
+
+    finally:
+        server.shutdown()
+        server.server_close()

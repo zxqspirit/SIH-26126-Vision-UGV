@@ -26,6 +26,7 @@ import base64
 import http.server
 import json
 import os
+import re
 import socketserver
 import sys
 import urllib.parse
@@ -64,25 +65,98 @@ CURRENT_LIVE_SCENARIO: Optional[str] = None
 
 
 
-def parse_upload_payload(headers: Dict[str, str], body_bytes: bytes) -> Tuple[str, bytes]:
-    """Extract filename and file bytes from multipart/form-data or raw octet stream."""
+def parse_upload_payload(headers: Dict[str, str], body_bytes: bytes) -> List[Tuple[str, bytes]]:
+    """Extract all files (filename, file_bytes) from multipart/form-data or raw octet stream."""
     ct = headers.get("content-type", headers.get("Content-Type", ""))
+    files: List[Tuple[str, bytes]] = []
     if "multipart/form-data" in ct:
         msg = email.message_from_bytes(f"Content-Type: {ct}\r\n\r\n".encode("utf-8") + body_bytes)
         for part in msg.walk():
             filename = part.get_filename()
             if filename:
                 payload = part.get_payload(decode=True)
-                return filename, payload
-        # Fallback if no filename in part
-        return "uploaded_media.jpg", body_bytes
+                if payload:
+                    files.append((filename, payload))
+        if files:
+            return files
 
     # Raw binary upload fallback
-    return "uploaded_media.jpg", body_bytes
+    return [("uploaded_media.jpg", body_bytes)]
 
 
-def process_uploaded_media(filename: str, data_bytes: bytes) -> Dict[str, Any]:
-    """Process uploaded image or video into an OutdoorDatasetLoader scenario."""
+def process_uploaded_media(files: List[Tuple[str, bytes]]) -> Dict[str, Any]:
+    """Process uploaded single image, video, or multi-image batch (up to 60 frames) into a scenario."""
+    if not files:
+        raise ValueError("No files provided for processing")
+
+    # Case 1: Multiple images uploaded simultaneously (Batch of frames, e.g., 60 frames)
+    if len(files) > 1:
+        # Natural sort key so frame_1, frame_2, ..., frame_10, frame_60 sort chronologically
+        def natural_sort_key(item: Tuple[str, bytes]):
+            return [int(t) if t.isdigit() else t.lower() for t in re.split(r'(\d+)', item[0])]
+        
+        files.sort(key=natural_sort_key)
+        # Cap at 60 frames max for model evaluation
+        files = files[:60]
+        
+        scenario_id = "uploaded_sequence"
+        scenario_dir = os.path.join(UPLOAD_BASE, scenario_id)
+        rgb_dir = os.path.join(scenario_dir, "rgb")
+        depth_dir = os.path.join(scenario_dir, "depth")
+        os.makedirs(rgb_dir, exist_ok=True)
+        os.makedirs(depth_dir, exist_ok=True)
+
+        for folder in [rgb_dir, depth_dir]:
+            for f in os.listdir(folder):
+                try:
+                    os.remove(os.path.join(folder, f))
+                except Exception:
+                    pass
+
+        h, w = 480, 640
+        processed_count = 0
+        for idx, (fname, data_bytes) in enumerate(files):
+            bgr = cv2.imdecode(np.frombuffer(data_bytes, np.uint8), cv2.IMREAD_COLOR)
+            if bgr is None:
+                continue
+            if (bgr.shape[1], bgr.shape[0]) != (w, h):
+                bgr = cv2.resize(bgr, (w, h), interpolation=cv2.INTER_AREA)
+
+            frame_name = f"frame_{idx:04d}"
+            cv2.imwrite(os.path.join(rgb_dir, f"{frame_name}.jpg"), bgr)
+
+            # Generate perspective ground-plane depth gradient (1.0m to 10.0m)
+            depth_m = np.zeros((h, w), dtype=np.float32)
+            horizon = int(h * 0.45)
+            ground_rows = h - horizon
+            grad = np.linspace(10.0, 1.2, ground_rows, dtype=np.float32)[:, np.newaxis]
+            depth_m[horizon:, :] = np.tile(grad, (1, w))
+            np.save(os.path.join(depth_dir, f"{frame_name}.npy"), depth_m)
+            processed_count += 1
+
+        if processed_count == 0:
+            raise ValueError("None of the uploaded images could be decoded")
+
+        metadata = {
+            "scenario_name": scenario_id,
+            "media_type": "sequence",
+            "total_frames": processed_count,
+            "resolution": [w, h],
+        }
+        with open(os.path.join(scenario_dir, "metadata.json"), "w", encoding="utf-8") as f:
+            json.dump(metadata, f, indent=2)
+
+        return {
+            "status": "success",
+            "scenario_id": scenario_id,
+            "scenario": scenario_id,
+            "media_type": "sequence",
+            "total_frames": processed_count,
+            "filename": f"batch_{processed_count}_frames",
+        }
+
+    # Case 2: Single file uploaded (either video or single image)
+    filename, data_bytes = files[0]
     ext = os.path.splitext(filename)[1].lower()
     is_video = ext in [".mp4", ".avi", ".mov", ".mkv", ".webm"]
     scenario_id = "uploaded_video" if is_video else "uploaded_image"
@@ -92,7 +166,6 @@ def process_uploaded_media(filename: str, data_bytes: bytes) -> Dict[str, Any]:
     os.makedirs(rgb_dir, exist_ok=True)
     os.makedirs(depth_dir, exist_ok=True)
 
-    # Clean previous files in target scenario
     for folder in [rgb_dir, depth_dir]:
         for f in os.listdir(folder):
             try:
@@ -106,7 +179,6 @@ def process_uploaded_media(filename: str, data_bytes: bytes) -> Dict[str, Any]:
 
     extracted_frames = 0
     if not is_video:
-        # Process single image
         bgr = cv2.imread(raw_temp_path)
         if bgr is None:
             raise ValueError(f"Failed to decode uploaded image: {filename}")
@@ -115,7 +187,6 @@ def process_uploaded_media(filename: str, data_bytes: bytes) -> Dict[str, Any]:
 
         cv2.imwrite(os.path.join(rgb_dir, "frame_0000.jpg"), bgr)
 
-        # Generate realistic perspective ground-plane depth gradient (1.0m to 10.0m)
         h, w = 480, 640
         depth_m = np.zeros((h, w), dtype=np.float32)
         horizon = int(h * 0.45)
@@ -123,10 +194,8 @@ def process_uploaded_media(filename: str, data_bytes: bytes) -> Dict[str, Any]:
         grad = np.linspace(10.0, 1.2, ground_rows, dtype=np.float32)[:, np.newaxis]
         depth_m[horizon:, :] = np.tile(grad, (1, w))
         np.save(os.path.join(depth_dir, "frame_0000.npy"), depth_m)
-
         extracted_frames = 1
     else:
-        # Process video frames (sample up to 60 frames)
         cap = cv2.VideoCapture(raw_temp_path)
         if not cap.isOpened():
             raise ValueError(f"Failed to decode uploaded video: {filename}")
@@ -143,7 +212,6 @@ def process_uploaded_media(filename: str, data_bytes: bytes) -> Dict[str, Any]:
             frame_name = f"frame_{idx:04d}"
             cv2.imwrite(os.path.join(rgb_dir, f"{frame_name}.jpg"), bgr)
 
-            # Synthetic perspective ground depth
             h, w = 480, 640
             depth_m = np.zeros((h, w), dtype=np.float32)
             horizon = int(h * 0.45)
@@ -171,6 +239,7 @@ def process_uploaded_media(filename: str, data_bytes: bytes) -> Dict[str, Any]:
     return {
         "status": "success",
         "scenario_id": scenario_id,
+        "scenario": scenario_id,
         "media_type": "video" if is_video else "image",
         "total_frames": extracted_frames,
         "filename": filename,
@@ -480,6 +549,17 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 {"id": "live_webcam", "name": "LIVE SENSOR: Real USB / DirectShow Camera (Device 0)"},
                 {"id": "live_camera", "name": "LIVE SENSOR: Virtual Simulated Stream (Single-Slot Ring Buffer)"},
             ]
+            seq_up = os.path.join(UPLOAD_BASE, "uploaded_sequence", "rgb", "frame_0000.jpg")
+            if os.path.exists(seq_up):
+                meta_file = os.path.join(UPLOAD_BASE, "uploaded_sequence", "metadata.json")
+                n_seq = 60
+                if os.path.exists(meta_file):
+                    try:
+                        with open(meta_file, "r", encoding="utf-8") as f:
+                            n_seq = json.load(f).get("total_frames", 60)
+                    except Exception:
+                        pass
+                scenarios.insert(0, {"id": "uploaded_sequence", "name": f"UPLOADED SEQUENCE: Custom Batch ({n_seq} Frames)"})
             img_up = os.path.join(UPLOAD_BASE, "uploaded_image", "rgb", "frame_0000.jpg")
             if os.path.exists(img_up):
                 scenarios.insert(0, {"id": "uploaded_image", "name": "UPLOADED IMAGE: Custom Uploaded Frame"})
@@ -634,24 +714,24 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                     return
 
                 raw_body = self.rfile.read(content_length)
-                filename, file_bytes = parse_upload_payload(dict(self.headers), raw_body)
+                files = parse_upload_payload(dict(self.headers), raw_body)
 
-                if not file_bytes:
+                if not files:
                     self._send_json({"error": "No valid file data received"}, status=400)
                     return
 
-                res = process_uploaded_media(filename, file_bytes)
+                res = process_uploaded_media(files)
                 scenario_id = res["scenario_id"]
+                res["scenario"] = scenario_id
 
                 # Reset loaders and caches for this scenario
                 LOADERS.pop(scenario_id, None)
                 PIPELINES.pop(scenario_id, None)
                 FRAME_CACHE.pop(scenario_id, None)
 
-                # If single image, pre-cache and return immediate telemetry
-                if res["media_type"] == "image":
-                    telemetry = process_and_cache_frame(scenario_id, 0)
-                    res["telemetry"] = telemetry
+                # Pre-cache frame 0 so initial telemetry is ready for immediate display
+                telemetry = process_and_cache_frame(scenario_id, 0)
+                res["telemetry"] = telemetry
 
                 self._send_json(res)
             except Exception as e:

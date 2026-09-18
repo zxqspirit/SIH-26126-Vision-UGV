@@ -703,7 +703,7 @@
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           <span id="uploadBtnText">Upload Media</span>
         </button>
-        <input type="file" id="mediaUploadInput" style="display:none;" accept="image/*,video/*" onchange="handleMediaUpload(this)">
+        <input type="file" id="mediaUploadInput" style="display:none;" accept="image/*,video/*" multiple onchange="handleMediaUpload(this)">
       </div>
       <select id="scenarioSelect" onchange="onScenarioChange()">
         <option value="scenario_1_open_path">Scenario 1: Open Traversable Trail</option>
@@ -1347,17 +1347,19 @@
 
     async function handleMediaUpload(input) {
       if (!input.files || input.files.length === 0) return;
-      const file = input.files[0];
+      const count = input.files.length;
       const btn = document.getElementById("btnUploadMedia");
       const btnText = document.getElementById("uploadBtnText");
       const origHtml = btnText.innerHTML;
 
       btn.disabled = true;
-      btnText.innerText = "Running Model...";
+      btnText.innerText = count > 1 ? `Running Model (${count} frames)...` : "Running Model...";
 
       try {
         const formData = new FormData();
-        formData.append("file", file);
+        for (let i = 0; i < input.files.length; i++) {
+          formData.append("file", input.files[i]);
+        }
 
         const resp = await fetch("/api/upload", {
           method: "POST",
