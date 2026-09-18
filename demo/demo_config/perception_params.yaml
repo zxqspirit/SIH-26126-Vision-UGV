@@ -1,0 +1,12 @@
+# Perception configuration
+perception:
+  model_type: "lightweight_cnn"
+  input_resolution: [640, 360]
+  use_gpu: true
+  green_threshold: 25.0
+  texture_threshold: 35.0
+  horizon_fraction: 0.34
+  confidence:
+    high_threshold: 0.75
+    min_adequate_lighting: 40.0
+    max_adequate_lighting: 220.0

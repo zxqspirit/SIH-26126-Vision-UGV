@@ -88,6 +88,7 @@ class FusionEngine:
         px_cost = ((1.0 - sub_trav) * 254.0).astype(np.float32)
         disagree_vals = disagree_px[::2, ::2][valid_depth]
         uncertainty_vals = uncertainty_px[::2, ::2][valid_depth]
+        tc_sub = semantic.terrain_class_map[::2, ::2][valid_depth]
 
         # Map to grid indices
         # Forward: row 0 is at UGV, row grid_h-1 is 10m forward
@@ -102,6 +103,7 @@ class FusionEngine:
         cost_valid = px_cost[in_grid]
         dis_valid = disagree_vals[in_grid]
         unc_valid = uncertainty_vals[in_grid]
+        tc_valid = tc_sub[in_grid]
 
         # Vectorized accumulation using numpy ufuncs (< 4 ms)
         np.add.at(accum_cost, (r_valid, c_valid), cost_valid)
@@ -128,6 +130,12 @@ class FusionEngine:
         # Obstacle grid: True where cell cost >= 220 (impassable)
         obstacle_grid[observed_mask] = costmap_grid[observed_mask] >= 220
 
+        # Terrain Class Grid: record predominant / highest-hazard terrain class per cell
+        terrain_class_grid = np.zeros((self.grid_h, self.grid_w), dtype=np.uint8)
+        if np.any(in_grid):
+            order = np.argsort(tc_valid)
+            terrain_class_grid[r_valid[order], c_valid[order]] = tc_valid[order].astype(np.uint8)
+
         # Uncertainty Grid: unobserved cells receive maximum uncertainty (1.0)
         uncertainty_grid = np.ones((self.grid_h, self.grid_w), dtype=np.float32)
         uncertainty_grid[observed_mask] = accum_uncertainty[observed_mask] / observed_count[observed_mask]
@@ -151,4 +159,5 @@ class FusionEngine:
             obstacle_mask=obstacle_grid,
             uncertainty_grid=uncertainty_grid,
             uncertainty_px=uncertainty_px,
+            terrain_class_grid=terrain_class_grid,
         )

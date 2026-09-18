@@ -1,9 +1,23 @@
-"""Interactive Laptop Mission Control Dashboard Server for SIH 26126.
+"""Interactive SIH Judge Mission Control Dashboard Server for SIH 26126.
 
 Serves a rich, glassmorphic real-time visual telemetry dashboard
 allowing judges, mentors, and engineers to inspect all internal pipeline states:
-RGB, Semantic Mask, Metric Depth, 2D BEV Costmap, DWA Trajectories,
-Visual Odometry XY Path, Multi-Source Confidence Bars, and the Deterministic Safety Arbiter.
+RGB, Semantic Mask, Metric Depth, 2D BEV Costmap, 6-Level Traversability,
+3D Obstacles, Global A* Path, DWA Trajectories, Visual Odometry History,
+Multi-Source Confidence Bars, and the Deterministic Safety Arbiter.
+
+Explains:
+- WHY PATH CHANGED
+- WHY SPEED REDUCED
+- WHY STOPPED
+
+Displays 6 Standardized Judge States:
+- AUTONOMOUS
+- CAUTION
+- UNCERTAIN
+- SAFE STOP
+- LOCALIZATION LOST
+- RECOVERING
 """
 
 from __future__ import annotations
@@ -15,7 +29,8 @@ import os
 import socketserver
 import sys
 import urllib.parse
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional, Tuple
+
 import cv2
 import numpy as np
 
@@ -25,18 +40,24 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from src.datasets.outdoor_dataset_loader import OutdoorDatasetLoader
+from src.interfaces.types import TrackingStatus
 from src.pipeline import NavigationPipeline
+from src.sensors.live_pipeline import LiveCameraStreamer, MockLiveCamera
 
 PORT = 5000
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
-# Cache pipelines and datasets per scenario
+# Global caches
 LOADERS: Dict[str, OutdoorDatasetLoader] = {}
 PIPELINES: Dict[str, NavigationPipeline] = {}
 FRAME_CACHE: Dict[str, Dict[int, Dict[str, Any]]] = {}
 
+# Live streaming state
+LIVE_STREAMER: Optional[LiveCameraStreamer] = None
+LIVE_PIPELINE: Optional[NavigationPipeline] = None
 
-def get_or_create_pipeline(scenario_name: str) -> tuple[OutdoorDatasetLoader, NavigationPipeline]:
+
+def get_or_create_pipeline(scenario_name: str) -> Tuple[OutdoorDatasetLoader, NavigationPipeline]:
     """Retrieve or instantiate pipeline and dataset loader for scenario."""
     if scenario_name not in LOADERS:
         scenario_dir = os.path.join(REPO_ROOT, "datasets", "processed", scenario_name)
@@ -48,13 +69,257 @@ def get_or_create_pipeline(scenario_name: str) -> tuple[OutdoorDatasetLoader, Na
     return LOADERS[scenario_name], PIPELINES[scenario_name]
 
 
+def derive_judge_state(tele: Dict[str, Any]) -> str:
+    """Derive the 6 standardized judge states deterministically from backend data."""
+    odometry = tele["odometry"]
+    safety = tele["safety"]
+    decision = tele["decision"]
+
+    tracking_status_str = odometry.tracking_status.value if hasattr(odometry.tracking_status, "value") else str(odometry.tracking_status)
+    safety_state_str = safety.safety_state.value if hasattr(safety.safety_state, "value") else str(safety.safety_state)
+    nav_state_str = decision.navigation_state.value if hasattr(decision.navigation_state, "value") else str(decision.navigation_state)
+
+    # 1. LOCALIZATION LOST
+    if tracking_status_str == "TRACKING_LOST" or odometry.confidence < 0.20:
+        return "LOCALIZATION LOST"
+
+    # 2. RECOVERING
+    reloc_val = getattr(odometry, "relocalization_state", None)
+    reloc_str = reloc_val.value if hasattr(reloc_val, "value") else str(reloc_val) if reloc_val else ""
+    if reloc_str in ("RELOCALIZING", "SEARCHING", "RECOVERED") or nav_state_str in ("RECOVERY_HOLD", "RECOVERING"):
+        return "RECOVERING"
+
+    # 3. SAFE STOP
+    if safety.is_emergency_stop or safety_state_str == "CRITICAL" or nav_state_str == "ESTOP":
+        return "SAFE STOP"
+    if decision.status in ("OBSTACLE_BLOCKED", "NO_TRAVERSABLE_PATH") and safety.commanded_linear_velocity <= 0.001:
+        return "SAFE STOP"
+
+    # 4. UNCERTAIN
+    reobserve_on = bool(safety.decision_log and safety.decision_log.reobserve_active)
+    if safety_state_str == "LOW" or reobserve_on or nav_state_str in ("CAUTIOUS_CRAWL", "RE_OBSERVE"):
+        return "UNCERTAIN"
+
+    # 5. CAUTION
+    if safety_state_str == "MEDIUM" or tracking_status_str == "TRACKING_DEGRADED" or nav_state_str == "CAUTIOUS_EXPLORATION":
+        return "CAUTION"
+
+    # 6. AUTONOMOUS
+    return "AUTONOMOUS"
+
+
+def compute_explainability(tele: Dict[str, Any], cmd: Any) -> Dict[str, str]:
+    """Extract causal explanations directly from backend decision and safety logs."""
+    decision = tele["decision"]
+    safety = tele["safety"]
+    cost_exp = decision.cost_explanation
+    dominant_terrain = cost_exp.primary_terrain if cost_exp else "TRAVERSABLE"
+    explanation_txt = cost_exp.explanation_text if cost_exp else ""
+
+    # 1. WHY PATH CHANGED
+    steer_val = decision.recommended_steering
+    steering_str = steer_val.value if hasattr(steer_val, 'value') else str(steer_val)
+
+    if decision.status == "OBSTACLE_BLOCKED":
+        why_path = (
+            f"DIRECT PATH BLOCKED: Positive obstacle detected in forward corridor. "
+            f"Evasive steering commanded to preserve {decision.min_clearance_m:.2f}m boundary clearance."
+        )
+    else:
+        why_path = (
+            f"Steering {steering_str} (w = {decision.recommended_angular_velocity:+.2f} rad/s). "
+            f"Trajectory selected over {dominant_terrain} terrain maintaining {decision.min_clearance_m:.2f}m clearance. "
+            f"{explanation_txt}"
+        )
+
+    # 2. WHY SPEED REDUCED
+    speed_scale = safety.speed_scale_factor
+    if speed_scale < 0.99:
+        primary_reason = safety.audit_reasons[0] if safety.audit_reasons else "Speed reduced under uncertainty"
+        why_speed = (
+            f"Speed scaled to {speed_scale * 100:.0f}% (v = {safety.commanded_linear_velocity:.2f} m/s). "
+            f"Cause: {primary_reason}"
+        )
+    else:
+        why_speed = (
+            f"Full nominal speed (100%, v = {safety.commanded_linear_velocity:.2f} m/s). "
+            f"Perception and localization confidences nominal across clear corridor."
+        )
+
+    # 3. WHY STOPPED
+    is_stopped = safety.commanded_linear_velocity <= 0.001 or safety.is_emergency_stop
+    if is_stopped:
+        if safety.decision_log and safety.decision_log.reason:
+            stop_reason = safety.decision_log.reason
+        elif safety.audit_reasons:
+            stop_reason = safety.audit_reasons[0]
+        else:
+            stop_reason = "Vehicle stopped by safety gate"
+        why_stopped = f"STOPPED / SAFE HOLD: {stop_reason}"
+    else:
+        why_stopped = f"NOT STOPPED: Forward progression active at {safety.commanded_linear_velocity:.2f} m/s."
+
+    return {
+        "why_path_changed": why_path,
+        "why_speed_reduced": why_speed,
+        "why_stopped": why_stopped,
+    }
+
+
+def serialize_frame_telemetry(
+    frame: Any,
+    cmd: Any,
+    tele: Dict[str, Any],
+    pipeline: NavigationPipeline,
+    cur_idx: int,
+) -> Dict[str, Any]:
+    """Encode images and format JSON telemetry from a processed frame."""
+    # Optimization 1: Fast Vectorized Visualization Serialization
+    jpeg_params = [cv2.IMWRITE_JPEG_QUALITY, 70, cv2.IMWRITE_JPEG_OPTIMIZE, 0]
+
+    # 1. RGB with optional semantic overlay (downscaled to 320x240 for web UI previews)
+    rgb_small = cv2.resize(frame.rgb, (320, 240), interpolation=cv2.INTER_AREA)
+    rgb_bgr = cv2.cvtColor(rgb_small, cv2.COLOR_RGB2BGR)
+
+    sem_mask = cv2.resize(tele["semantic"].traversability_mask, (320, 240), interpolation=cv2.INTER_NEAREST)
+    alpha_mask = np.clip(sem_mask, 0.0, 1.0)[:, :, np.newaxis]
+    blended = np.clip(rgb_bgr * (1.0 - 0.35 * alpha_mask) + np.array([0, 89, 0], dtype=np.float32) * alpha_mask, 0, 255).astype(np.uint8)
+
+    _, rgb_jpg = cv2.imencode(".jpg", rgb_bgr, jpeg_params)
+    _, sem_jpg = cv2.imencode(".jpg", blended, jpeg_params)
+
+    # 2. Depth colormap (Turbo) - downscale to 320x240
+    depth_small = cv2.resize(frame.depth_m, (320, 240), interpolation=cv2.INTER_NEAREST)
+    valid = np.isfinite(depth_small) & (depth_small > 0.1) & (depth_small < 15.0)
+    norm_depth = np.zeros_like(depth_small, dtype=np.uint8)
+    if np.any(valid):
+        norm_depth[valid] = np.clip((depth_small[valid] / 10.0) * 255.0, 0, 255).astype(np.uint8)
+    depth_color = cv2.applyColorMap(norm_depth, cv2.COLORMAP_TURBO)
+    depth_color[~valid] = [30, 30, 30]  # Dark gray for invalid depth
+    _, depth_jpg = cv2.imencode(".jpg", depth_color, jpeg_params)
+
+    # 3. 2D Costmap Image (100x100 -> 240x240, flipped so forward is UP)
+    cost_grid = tele["fused"].fused_costmap
+    cost_bgr = cv2.cvtColor(cost_grid, cv2.COLOR_GRAY2BGR)
+    cost_bgr[cost_grid >= 220] = [0, 0, 255]  # Red lethal
+    cost_bgr[cost_grid == 128] = [60, 30, 10]  # Dark blue unknown
+    cost_large = cv2.resize(cv2.flip(cost_bgr, 0), (240, 240), interpolation=cv2.INTER_NEAREST)
+    _, cost_jpg = cv2.imencode(".jpg", cost_large, jpeg_params)
+
+    # 4. 6-Level Visual Traversability Map (100x100 -> 240x240)
+    trav_rgba = tele["traversability"].visual_map
+    trav_bgr = cv2.cvtColor(trav_rgba, cv2.COLOR_RGBA2BGR)
+    trav_large = cv2.resize(cv2.flip(trav_bgr, 0), (240, 240), interpolation=cv2.INTER_NEAREST)
+    _, trav_jpg = cv2.imencode(".jpg", trav_large, jpeg_params)
+
+    # 5. Candidate rollouts for canvas overlay
+    candidate_paths = []
+    for traj in tele["planning"].candidate_trajectories[:24]:
+        pts_2d = [{"x": round(float(p[0]), 2), "y": round(float(p[1]), 2)} for p in traj.points]
+        candidate_paths.append({
+            "points": pts_2d,
+            "is_valid": traj.is_valid,
+            "v": round(float(traj.linear_velocity), 2),
+            "w": round(float(traj.angular_velocity), 2),
+            "cost": round(float(traj.cost), 3),
+        })
+
+    # Selected rollout
+    selected_path = []
+    if tele["planning"].selected_trajectory is not None:
+        selected_path = [
+            {"x": round(float(p[0]), 2), "y": round(float(p[1]), 2)}
+            for p in tele["planning"].selected_trajectory.points
+        ]
+
+    # Global A* recommended path
+    global_path = []
+    if tele["decision"].recommended_path is not None:
+        global_path = [
+            {"x": round(float(wp[0]), 2), "y": round(float(wp[1]), 2)}
+            for wp in tele["decision"].recommended_path.waypoints
+        ]
+
+    # Derive state & explanations
+    judge_state = derive_judge_state(tele)
+    explain = compute_explainability(tele, cmd)
+
+    return {
+        "frame_id": cur_idx,
+        "timestamp": round(float(frame.timestamp), 3),
+        "fps": tele["fps"],
+        "latency_ms": tele["total_latency_ms"],
+        "judge_state": judge_state,
+        "explainability": explain,
+        "images": {
+            "rgb": base64.b64encode(rgb_jpg).decode("utf-8"),
+            "semantic": base64.b64encode(sem_jpg).decode("utf-8"),
+            "depth": base64.b64encode(depth_jpg).decode("utf-8"),
+            "costmap": base64.b64encode(cost_jpg).decode("utf-8"),
+            "traversability": base64.b64encode(trav_jpg).decode("utf-8"),
+        },
+        "motion": {
+            "linear_velocity": cmd.linear_velocity,
+            "angular_velocity": cmd.angular_velocity,
+            "steering_direction": cmd.steering_direction,
+            "navigation_state": cmd.navigation_state,
+            "safety_state": cmd.safety_state,
+            "confidence": cmd.confidence,
+        },
+        "confidence_breakdown": {
+            "c_perc": round(float(tele["semantic"].confidence), 3),
+            "c_geom": round(float(tele["geometry"].confidence), 3),
+            "c_vo": round(float(tele["odometry"].confidence), 3),
+            "c_fusion": round(float(tele["fused"].confidence), 3),
+            "c_total": round(float(tele["safety"].overall_confidence), 3),
+            "disagreement": round(float(tele["safety_decision_log"]["signals"].get("disagreement_ratio", 0.0)), 3)
+            if tele.get("safety_decision_log") else 0.0,
+            "temporal": round(float(tele["safety_decision_log"]["signals"].get("temporal_consistency", 1.0)), 3)
+            if tele.get("safety_decision_log") else 1.0,
+        },
+        "odometry": {
+            "x": round(float(tele["odometry"].x), 3),
+            "y": round(float(tele["odometry"].y), 3),
+            "yaw": round(float(tele["odometry"].yaw), 3),
+            "inliers": tele["odometry"].inlier_count,
+            "status": tele["odometry"].tracking_status.value,
+            "history": [
+                {"x": round(float(h[0]), 2), "y": round(float(h[1]), 2)}
+                for h in pipeline.odometry.trajectory_history
+            ],
+        },
+        "planning": {
+            "status": tele["decision"].status,
+            "min_clearance_m": round(float(tele["decision"].min_clearance_m), 3),
+            "global_path": global_path,
+            "selected_path": selected_path,
+            "candidate_paths": candidate_paths,
+            "cost_breakdown": {
+                "progress": tele["decision"].cost_explanation.progress_score if tele["decision"].cost_explanation else 0.0,
+                "clearance": tele["decision"].cost_explanation.clearance_score if tele["decision"].cost_explanation else 0.0,
+                "traversability": tele["decision"].cost_explanation.traversability_score if tele["decision"].cost_explanation else 0.0,
+                "heading": tele["decision"].cost_explanation.heading_score if tele["decision"].cost_explanation else 0.0,
+                "dominant_terrain": tele["decision"].cost_explanation.primary_terrain if tele["decision"].cost_explanation else "UNKNOWN",
+                "explanation": tele["decision"].cost_explanation.explanation_text if tele["decision"].cost_explanation else "",
+            },
+        },
+        "safety": {
+            "action": tele["safety"].action,
+            "audit_reasons": tele["safety"].audit_reasons,
+            "speed_scale": tele["safety"].speed_scale_factor,
+            "clearance_inflation": tele["safety"].clearance_inflation_factor,
+            "is_emergency_stop": tele["safety"].is_emergency_stop,
+            "decision_log": tele.get("safety_decision_log"),
+        },
+    }
+
+
 def process_and_cache_frame(scenario_name: str, frame_idx: int) -> Dict[str, Any]:
     """Process a single frame and cache visualizations and telemetry."""
     loader, pipeline = get_or_create_pipeline(scenario_name)
     if frame_idx in FRAME_CACHE[scenario_name]:
         return FRAME_CACHE[scenario_name][frame_idx]
 
-    # Need to run sequentially if previous frames aren't processed (for odometry)
     cur_idx = 0
     while cur_idx <= frame_idx:
         if cur_idx not in FRAME_CACHE[scenario_name]:
@@ -62,104 +327,7 @@ def process_and_cache_frame(scenario_name: str, frame_idx: int) -> Dict[str, Any
             if frame is None:
                 break
             cmd, tele = pipeline.process_frame(frame)
-
-            # Generate encoded JPEG images for frontend
-            # 1. RGB with optional semantic overlay
-            rgb_bgr = cv2.cvtColor(frame.rgb, cv2.COLOR_RGB2BGR)
-            sem_mask = tele["semantic"].traversability_mask
-            # Green overlay for traversable regions
-            overlay = rgb_bgr.copy()
-            green_tint = np.zeros_like(rgb_bgr)
-            green_tint[:, :, 1] = 255  # Green channel
-            alpha_mask = np.clip(sem_mask, 0.0, 1.0)[:, :, np.newaxis]
-            blended = (rgb_bgr * (1.0 - 0.4 * alpha_mask) + green_tint * (0.4 * alpha_mask)).astype(np.uint8)
-
-            _, rgb_jpg = cv2.imencode(".jpg", rgb_bgr, [cv2.IMWRITE_JPEG_QUALITY, 80])
-            _, sem_jpg = cv2.imencode(".jpg", blended, [cv2.IMWRITE_JPEG_QUALITY, 80])
-
-            # 2. Depth colormap (Turbo / Inferno)
-            depth = frame.depth_m
-            valid = np.isfinite(depth) & (depth > 0.1) & (depth < 15.0)
-            norm_depth = np.zeros_like(depth, dtype=np.uint8)
-            if np.any(valid):
-                norm_depth[valid] = np.clip((depth[valid] / 10.0) * 255.0, 0, 255).astype(np.uint8)
-            depth_color = cv2.applyColorMap(norm_depth, cv2.COLORMAP_TURBO)
-            depth_color[~valid] = [30, 30, 30]  # Dark gray for invalid depth
-            _, depth_jpg = cv2.imencode(".jpg", depth_color, [cv2.IMWRITE_JPEG_QUALITY, 80])
-
-            # 3. 2D Costmap Image (100x100)
-            cost_grid = tele["fused"].fused_costmap
-            cost_bgr = cv2.cvtColor(cost_grid, cv2.COLOR_GRAY2BGR)
-            # Mark lethal obstacles in bright red
-            cost_bgr[cost_grid >= 220] = [0, 0, 255]
-            # Mark unknown in dark blue
-            cost_bgr[cost_grid == 128] = [60, 30, 10]
-            # Resize for visual clarity (300x300)
-            cost_large = cv2.resize(cost_bgr, (300, 300), interpolation=cv2.INTER_NEAREST)
-            # Flip vertically so forward is up
-            cost_large = cv2.flip(cost_large, 0)
-            _, cost_jpg = cv2.imencode(".jpg", cost_large)
-
-            # Candidate trajectories rollout points for SVG/canvas rendering
-            candidate_paths = []
-            for traj in tele["planning"].candidate_trajectories[:18]:
-                pts_2d = [{"x": round(float(p[0]), 2), "y": round(float(p[1]), 2)} for p in traj.points]
-                candidate_paths.append({
-                    "points": pts_2d,
-                    "is_valid": traj.is_valid,
-                    "v": round(float(traj.linear_velocity), 2),
-                    "w": round(float(traj.angular_velocity), 2),
-                })
-
-            selected_path = []
-            if tele["planning"].selected_trajectory is not None:
-                selected_path = [{"x": round(float(p[0]), 2), "y": round(float(p[1]), 2)} for p in tele["planning"].selected_trajectory.points]
-
-            cached_item = {
-                "frame_id": cur_idx,
-                "timestamp": round(float(frame.timestamp), 2),
-                "fps": tele["fps"],
-                "latency_ms": tele["total_latency_ms"],
-                "images": {
-                    "rgb": base64.b64encode(rgb_jpg).decode("utf-8"),
-                    "semantic": base64.b64encode(sem_jpg).decode("utf-8"),
-                    "depth": base64.b64encode(depth_jpg).decode("utf-8"),
-                    "costmap": base64.b64encode(cost_jpg).decode("utf-8"),
-                },
-                "motion": {
-                    "linear_velocity": cmd.linear_velocity,
-                    "angular_velocity": cmd.angular_velocity,
-                    "steering_direction": cmd.steering_direction,
-                    "navigation_state": cmd.navigation_state,
-                    "safety_state": cmd.safety_state,
-                    "confidence": cmd.confidence,
-                },
-                "confidence_breakdown": {
-                    "c_perc": round(float(tele["semantic"].confidence), 3),
-                    "c_geom": round(float(tele["geometry"].confidence), 3),
-                    "c_vo": round(float(tele["odometry"].confidence), 3),
-                    "c_fusion": round(float(tele["fused"].confidence), 3),
-                    "c_total": round(float(tele["safety"].overall_confidence), 3),
-                },
-                "odometry": {
-                    "x": round(float(tele["odometry"].x), 3),
-                    "y": round(float(tele["odometry"].y), 3),
-                    "yaw": round(float(tele["odometry"].yaw), 3),
-                    "inliers": tele["odometry"].inlier_count,
-                    "status": tele["odometry"].tracking_status.value,
-                    "history": [{"x": round(float(h[0]), 2), "y": round(float(h[1]), 2)} for h in pipeline.odometry.trajectory_history],
-                },
-                "planning": {
-                    "status": tele["planning"].status,
-                    "selected_path": selected_path,
-                    "candidate_paths": candidate_paths,
-                },
-                "safety": {
-                    "audit_reasons": tele["safety"].audit_reasons,
-                    "speed_scale": tele["safety"].speed_scale_factor,
-                    "is_emergency_stop": tele["safety"].is_emergency_stop,
-                }
-            }
+            cached_item = serialize_frame_telemetry(frame, cmd, tele, pipeline, cur_idx)
             FRAME_CACHE[scenario_name][cur_idx] = cached_item
         cur_idx += 1
 
@@ -181,8 +349,9 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 {"id": "scenario_1_open_path", "name": "Scenario 1: Open Traversable Trail (High Confidence)"},
                 {"id": "scenario_2_sudden_obstacle", "name": "Scenario 2: Sudden Positive Obstacle on Path"},
                 {"id": "scenario_3_terrain_boundary", "name": "Scenario 3: Non-Traversable Vegetation Boundary"},
-                {"id": "scenario_4_depth_degradation", "name": "Scenario 4: Glare & Invalid Depth (Rule 12)"},
+                {"id": "scenario_4_depth_degradation", "name": "Scenario 4: Depth Degradation & Sensor Dropout"},
                 {"id": "scenario_5_visual_degradation", "name": "Scenario 5: Visual Feature Loss (Rule 13 E-Stop)"},
+                {"id": "live_camera", "name": "LIVE CAMERA: Real-Time Stream (Single-Slot Ring Buffer)"},
             ]
             self._send_json({"scenarios": scenarios})
             return
@@ -190,6 +359,11 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         elif path == "/api/telemetry":
             query = urllib.parse.parse_qs(parsed.query)
             scenario = query.get("scenario", ["scenario_1_open_path"])[0]
+
+            if scenario == "live_camera":
+                self._handle_live_telemetry()
+                return
+
             frame_idx = int(query.get("frame", [0])[0])
 
             try:
@@ -201,6 +375,10 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 self._send_json(data)
             except Exception as e:
                 self._send_json({"error": str(e)}, status=500)
+            return
+
+        elif path == "/api/live_telemetry":
+            self._handle_live_telemetry()
             return
 
         elif path == "/api/reset":
@@ -218,6 +396,32 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
         return super().do_GET()
 
+    def _handle_live_telemetry(self) -> None:
+        """Process live frame from LiveCameraStreamer and return serialized telemetry."""
+        global LIVE_STREAMER, LIVE_PIPELINE
+        try:
+            if LIVE_STREAMER is None:
+                cam = MockLiveCamera(target_fps=20.0, frame_width=640, frame_height=480, simulate_depth=True)
+                LIVE_STREAMER = LiveCameraStreamer(camera_source=cam, target_fps=20.0)
+                LIVE_STREAMER.start()
+                LIVE_PIPELINE = NavigationPipeline()
+
+            frame = LIVE_STREAMER.read_next_frame(timeout_s=0.5)
+            if frame is None:
+                # Fallback to empty live status
+                metrics = LIVE_STREAMER.get_health_metrics()
+                self._send_json({"is_live": True, "health": metrics.to_dict(), "judge_state": metrics.health_state.value})
+                return
+
+            cmd, tele = LIVE_PIPELINE.process_frame(frame)
+            data = serialize_frame_telemetry(frame, cmd, tele, LIVE_PIPELINE, frame.frame_id)
+            data["is_live"] = True
+            data["live_health"] = LIVE_STREAMER.get_health_metrics().to_dict()
+            data["total_frames"] = 1000
+            self._send_json(data)
+        except Exception as e:
+            self._send_json({"error": str(e)}, status=500)
+
     def _send_json(self, data: Any, status: int = 200) -> None:
         payload = json.dumps(data).encode("utf-8")
         self.send_response(status)
@@ -233,7 +437,7 @@ def run_server(port: int = PORT) -> None:
     os.makedirs(STATIC_DIR, exist_ok=True)
     with socketserver.TCPServer(("", port), DashboardHandler) as httpd:
         print(f"=================================================================")
-        print(f"SIH 26126: TerrainSight Laptop Dashboard running at http://localhost:{port}")
+        print(f"SIH 26126: Technical Mission Control Dashboard at http://localhost:{port}")
         print(f"Press Ctrl+C to stop.")
         print(f"=================================================================")
         try:

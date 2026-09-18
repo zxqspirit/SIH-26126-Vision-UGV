@@ -1,0 +1,92 @@
+[
+  {
+    "scenario": "scenario_2_sudden_obstacle",
+    "frame": 0,
+    "has_obstacle": true,
+    "obstacle_dist_m": 3.2
+  },
+  {
+    "scenario": "scenario_2_sudden_obstacle",
+    "frame": 1,
+    "has_obstacle": true,
+    "obstacle_dist_m": 3.05
+  },
+  {
+    "scenario": "scenario_2_sudden_obstacle",
+    "frame": 2,
+    "has_obstacle": true,
+    "obstacle_dist_m": 2.9
+  },
+  {
+    "scenario": "scenario_2_sudden_obstacle",
+    "frame": 3,
+    "has_obstacle": true,
+    "obstacle_dist_m": 2.75
+  },
+  {
+    "scenario": "scenario_2_sudden_obstacle",
+    "frame": 4,
+    "has_obstacle": true,
+    "obstacle_dist_m": 2.6
+  },
+  {
+    "scenario": "scenario_2_sudden_obstacle",
+    "frame": 5,
+    "has_obstacle": true,
+    "obstacle_dist_m": 2.45
+  },
+  {
+    "scenario": "scenario_2_sudden_obstacle",
+    "frame": 6,
+    "has_obstacle": true,
+    "obstacle_dist_m": 2.3
+  },
+  {
+    "scenario": "scenario_2_sudden_obstacle",
+    "frame": 7,
+    "has_obstacle": true,
+    "obstacle_dist_m": 2.15
+  },
+  {
+    "scenario": "scenario_2_sudden_obstacle",
+    "frame": 8,
+    "has_obstacle": true,
+    "obstacle_dist_m": 2.0
+  },
+  {
+    "scenario": "scenario_2_sudden_obstacle",
+    "frame": 9,
+    "has_obstacle": true,
+    "obstacle_dist_m": 1.85
+  },
+  {
+    "scenario": "scenario_2_sudden_obstacle",
+    "frame": 10,
+    "has_obstacle": true,
+    "obstacle_dist_m": 1.7
+  },
+  {
+    "scenario": "scenario_2_sudden_obstacle",
+    "frame": 11,
+    "has_obstacle": true,
+    "obstacle_dist_m": 1.55
+  },
+  {
+    "scenario": "scenario_2_sudden_obstacle",
+    "frame": 12,
+    "has_obstacle": true,
+    "obstacle_dist_m": 1.4
+  },
+  {
+    "scenario": "scenario_2_sudden_obstacle",
+    "frame": 13,
+    "has_obstacle": true,
+    "obstacle_dist_m": 1.25
+  },
+  {
+    "scenario": "scenario_2_sudden_obstacle",
+    "frame": 14,
+    "has_obstacle": true,
+    "obstacle_dist_m": 1.1
+  }
+]

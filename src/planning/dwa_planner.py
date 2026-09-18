@@ -5,6 +5,7 @@ avoids obstacles, optimizes for forward traversability, and selects recommended 
 """
 
 from __future__ import annotations
+import math
 
 import time
 from typing import List, Tuple, Optional
@@ -83,8 +84,8 @@ class DWAPlanner:
                 accum_cell_cost = 0.0
 
                 for _ in range(steps):
-                    x += v * np.cos(yaw) * self.dt
-                    y += v * np.sin(yaw) * self.dt
+                    x += v * math.cos(yaw) * self.dt
+                    y += v * math.sin(yaw) * self.dt
                     yaw += w * self.dt
                     pts.append((x, y, yaw))
 

@@ -170,3 +170,5 @@ models/checkpoints/**/*.pt
 models/checkpoints/**/*.bin
 models/checkpoints/**/*.onnx
 
+
+!demo/sample_data/**

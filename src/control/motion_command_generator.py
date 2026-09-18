@@ -53,15 +53,22 @@ class MotionCommandGenerator:
             steering = SteeringDirection.SLIGHT_RIGHT.value
 
         # Determine overall navigation state
-        if safety_result.safety_state == SafetyState.SAFETY_STOP:
-            nav_state = "ESTOP"
-        elif safety_result.safety_state == SafetyState.LOCALIZATION_LOST:
-            nav_state = "RECOVERY_HOLD"
+        is_reobserve = False
+        if safety_result.decision_log and safety_result.decision_log.reobserve_active:
+            is_reobserve = True
+
+        if safety_result.safety_state in (SafetyState.CRITICAL, "CRITICAL", SafetyState.SAFETY_STOP):
+            if any("localization" in r.lower() for r in safety_result.audit_reasons):
+                nav_state = "RECOVERY_HOLD"
+            else:
+                nav_state = "ESTOP"
+        elif is_reobserve:
+            nav_state = "RE_OBSERVE"
         elif planning_result.status == "OBSTACLE_BLOCKED":
             nav_state = "AVOIDING_BLOCKED"
-        elif safety_result.safety_state == SafetyState.LOW_CONFIDENCE_SLOW:
+        elif safety_result.safety_state in (SafetyState.LOW, "LOW", SafetyState.LOW_CONFIDENCE_SLOW):
             nav_state = "CAUTIOUS_CRAWL"
-        elif safety_result.safety_state == SafetyState.CAUTIOUS_DEGRADED:
+        elif safety_result.safety_state in (SafetyState.MEDIUM, "MEDIUM", SafetyState.CAUTIOUS_DEGRADED):
             nav_state = "CAUTIOUS_EXPLORATION"
         elif abs(w_cmd) > 0.15:
             nav_state = "AVOIDING"

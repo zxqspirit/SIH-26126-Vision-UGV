@@ -1,0 +1,62 @@
+{
+  "0": {
+    "name": "trail_road",
+    "color": [
+      46,
+      204,
+      113
+    ],
+    "cost": 0,
+    "description": "Preferred Traversable Path"
+  },
+  "1": {
+    "name": "grass",
+    "color": [
+      52,
+      152,
+      219
+    ],
+    "cost": 30,
+    "description": "Flat Vegetative Ground"
+  },
+  "2": {
+    "name": "gravel_rock",
+    "color": [
+      241,
+      196,
+      15
+    ],
+    "cost": 80,
+    "description": "Uneven Medium-Risk Surface"
+  },
+  "3": {
+    "name": "obstacle_tree",
+    "color": [
+      231,
+      76,
+      60
+    ],
+    "cost": 255,
+    "description": "Physical Collision Hazard"
+  },
+  "4": {
+    "name": "water_mud",
+    "color": [
+      155,
+      89,
+      182
+    ],
+    "cost": 200,
+    "description": "Slick Surface Wheel-Slip Hazard"
+  },
+  "5": {
+    "name": "sky_void",
+    "color": [
+      149,
+      165,
+      166
+    ],
+    "cost": 128,
+    "description": "Uncertain / Off-Ground Cell"
+  }
+}

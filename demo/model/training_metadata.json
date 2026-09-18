@@ -1,0 +1,235 @@
+{
+  "model_architecture": "MobileNetV3-Large + LR-ASPP",
+  "num_classes": 9,
+  "classes": {
+    "0": "UNKNOWN",
+    "1": "PAVED_ROAD",
+    "2": "TRAVERSABLE_DIRT",
+    "3": "LOW_GRASS",
+    "4": "GRAVEL",
+    "5": "HIGH_VEGETATION",
+    "6": "OBSTACLE_SOLID",
+    "7": "WATER_PUDDLE",
+    "8": "DYNAMIC_OBSTACLE"
+  },
+  "seed": 42,
+  "git_commit_hash": "24edc18",
+  "device": "cpu",
+  "dataset_version": "dataset_v1.0",
+  "hyperparameters": {
+    "epochs": 10,
+    "batch_size": 4,
+    "learning_rate": 0.0005,
+    "optimizer": "AdamW",
+    "weight_decay": 0.0001,
+    "scheduler": "CosineAnnealingLR",
+    "loss": "WeightedDiceCELoss"
+  },
+  "best_val_mIoU": 0.6594138447736511,
+  "test_results": {
+    "test_loss": 0.5764805992444356,
+    "test_mIoU": 0.6556720899914397,
+    "test_mPrecision": 0.8276241881584405,
+    "test_mRecall": 0.7497965834537561,
+    "test_FWIoU": 0.8126542567891918,
+    "latency_ms": 54.79453333440082,
+    "throughput_fps": 18.249995741312123,
+    "per_class": {
+      "UNKNOWN": {
+        "class_id": 0,
+        "iou": 0.9401534170247818,
+        "precision": 0.982621866241074,
+        "recall": 0.9560497120823542,
+        "support_pixels": 1452846
+      },
+      "PAVED_ROAD": {
+        "class_id": 1,
+        "iou": 0.9252330306581815,
+        "precision": 0.9520433694745621,
+        "recall": 0.9704625353277728,
+        "support_pixels": 174084
+      },
+      "TRAVERSABLE_DIRT": {
+        "class_id": 2,
+        "iou": 0.7549599715089146,
+        "precision": 0.8199403292968648,
+        "recall": 0.9049998221178647,
+        "support_pixels": 899472
+      },
+      "LOW_GRASS": {
+        "class_id": 3,
+        "iou": 0.8082956344718389,
+        "precision": 0.8652822296276791,
+        "recall": 0.9246598160888311,
+        "support_pixels": 927513
+      },
+      "GRAVEL": {
+        "class_id": 4,
+        "iou": 0.24626485568760612,
+        "precision": 0.4977266878270567,
+        "recall": 0.3277040384072296,
+        "support_pixels": 106230
+      },
+      "HIGH_VEGETATION": {
+        "class_id": 5,
+        "iou": 0.5884529897930558,
+        "precision": 0.8481333027497968,
+        "recall": 0.6577600892466796,
+        "support_pixels": 331665
+      },
+      "OBSTACLE_SOLID": {
+        "class_id": 6,
+        "iou": 0.2554642494069807,
+        "precision": 0.9265632201567061,
+        "recall": 0.26074362300043236,
+        "support_pixels": 23130
+      },
+      "WATER_PUDDLE": {
+        "class_id": 7,
+        "iou": 0.7265525713801576,
+        "precision": 0.7286824998937843,
+        "recall": 0.9959930313588851,
+        "support_pixels": 17220
+      },
+      "DYNAMIC_OBSTACLE": {
+        "class_id": 8,
+        "iou": 0.0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "support_pixels": 0
+      }
+    }
+  },
+  "onnx_export": {
+    "status": "SUCCESS",
+    "path": "models/checkpoints/production_v1\\mobilenetv3_lraspp_best.onnx",
+    "size_mb": 12.277523040771484
+  },
+  "training_history": [
+    {
+      "epoch": 1,
+      "train_loss": 1.7382946610450745,
+      "val_loss": 1.7136146664619445,
+      "val_mIoU": 0.12235824896438807,
+      "val_fwiou": 0.2871874345671165,
+      "lr": 0.00048778860081564085,
+      "duration_sec": 20.824815800006036
+    },
+    {
+      "epoch": 2,
+      "train_loss": 0.9244714478651682,
+      "val_loss": 1.0670738399028779,
+      "val_mIoU": 0.37207614786914406,
+      "val_fwiou": 0.6690834938577561,
+      "lr": 0.00045234974009654937,
+      "duration_sec": 20.990760999993654
+    },
+    {
+      "epoch": 3,
+      "train_loss": 0.7243363509575526,
+      "val_loss": 0.9724806308746338,
+      "val_mIoU": 0.4296073605039165,
+      "val_fwiou": 0.6944720256787131,
+      "lr": 0.00039715242044697206,
+      "duration_sec": 20.71392240001296
+    },
+    {
+      "epoch": 4,
+      "train_loss": 0.623607171078523,
+      "val_loss": 0.8172286510467529,
+      "val_mIoU": 0.5157790846663487,
+      "val_fwiou": 0.7410753760370822,
+      "lr": 0.0003275997400965494,
+      "duration_sec": 20.81903080000484
+    },
+    {
+      "epoch": 5,
+      "train_loss": 0.5556868314743042,
+      "val_loss": 0.7236165761947632,
+      "val_mIoU": 0.574723231608634,
+      "val_fwiou": 0.7707877599259191,
+      "lr": 0.0002505,
+      "duration_sec": 21.702150099998107
+    },
+    {
+      "epoch": 6,
+      "train_loss": 0.525747075676918,
+      "val_loss": 0.6566665828227997,
+      "val_mIoU": 0.5914226160330969,
+      "val_fwiou": 0.7868361523071314,
+      "lr": 0.00017340025990345064,
+      "duration_sec": 21.017924500003573
+    },
+    {
+      "epoch": 7,
+      "train_loss": 0.4722336580355962,
+      "val_loss": 0.6042594075202942,
+      "val_mIoU": 0.6162100445395339,
+      "val_fwiou": 0.8039188126298276,
+      "lr": 0.00010384757955302797,
+      "duration_sec": 20.92390909999085
+    },
+    {
+      "epoch": 8,
+      "train_loss": 0.468055360019207,
+      "val_loss": 0.5921130299568176,
+      "val_mIoU": 0.6202805016790787,
+      "val_fwiou": 0.8066768989741568,
+      "lr": 4.865025990345064e-05,
+      "duration_sec": 20.811702999999397
+    },
+    {
+      "epoch": 9,
+      "train_loss": 0.6631948798894882,
+      "val_loss": 0.5748546123504639,
+      "val_mIoU": 0.6405138766424283,
+      "val_fwiou": 0.8112953919951351,
+      "lr": 1.3211399184359195e-05,
+      "duration_sec": 20.192640700013726
+    },
+    {
+      "epoch": 10,
+      "train_loss": 0.4616582691669464,
+      "val_loss": 0.5620653688907623,
+      "val_mIoU": 0.6594138447736511,
+      "val_fwiou": 0.817667025922678,
+      "lr": 1e-06,
+      "duration_sec": 20.213307799989707
+    }
+  ],
+  "success_cases": [
+    {
+      "id": "scenario_4_depth_degradation_frame_0014",
+      "pixel_accuracy": 0.9733352661132812,
+      "overlay_file": "scenario_4_depth_degradation_frame_0014_eval.jpg"
+    },
+    {
+      "id": "scenario_4_depth_degradation_frame_0013",
+      "pixel_accuracy": 0.97174072265625,
+      "overlay_file": "scenario_4_depth_degradation_frame_0013_eval.jpg"
+    },
+    {
+      "id": "scenario_4_depth_degradation_frame_0012",
+      "pixel_accuracy": 0.9703598022460938,
+      "overlay_file": "scenario_4_depth_degradation_frame_0012_eval.jpg"
+    }
+  ],
+  "failure_cases": [
+    {
+      "id": "scenario_3_terrain_boundary_frame_0012",
+      "pixel_accuracy": 0.689605712890625,
+      "overlay_file": "scenario_3_terrain_boundary_frame_0012_eval.jpg"
+    },
+    {
+      "id": "scenario_3_terrain_boundary_frame_0014",
+      "pixel_accuracy": 0.6823310852050781,
+      "overlay_file": "scenario_3_terrain_boundary_frame_0014_eval.jpg"
+    },
+    {
+      "id": "scenario_3_terrain_boundary_frame_0013",
+      "pixel_accuracy": 0.6769905090332031,
+      "overlay_file": "scenario_3_terrain_boundary_frame_0013_eval.jpg"
+    }
+  ],
+  "timestamp": "2026-09-18 05:10:31"
+}

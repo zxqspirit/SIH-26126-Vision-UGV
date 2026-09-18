@@ -1,0 +1,55 @@
+# TerrainSight UGV - Demo Pipeline Configuration
+pipeline:
+  name: "TerrainSight UGV SIH Demo"
+  version: "1.0-RC1"
+  mode: "replay" # Options: replay, live
+  target_fps: 12.0
+  log_level: "INFO"
+
+camera:
+  mount_height_m: 0.45
+  pitch_deg: -12.0
+  hfov_deg: 87.0
+  width: 640
+  height: 480
+  fx: 384.0
+  fy: 384.0
+  cx: 320.0
+  cy: 240.0
+
+perception:
+  model_path: "demo/model/mobilenetv3_lraspp_best.onnx"
+  metadata_path: "demo/model/training_metadata.json"
+  input_resolution: [320, 240]
+  use_fallback: true
+  confidence_threshold: 0.65
+
+depth_geometry:
+  ground_ransac_distance_m: 0.08
+  min_elevation_obstacle_m: 0.15
+  negative_obstacle_depth_m: -0.12
+  near_plane_m: 1.0
+  far_plane_m: 5.0
+
+fusion:
+  nominal_w_sem: 0.50
+  nominal_w_geom: 0.50
+  geometric_veto_elevation_m: 0.15
+  semantic_hazard_classes: [4] # Water / Mud
+
+planning:
+  costmap_size_m: [10.0, 10.0]
+  resolution_m: 0.10
+  ugv_footprint_radius_m: 0.35
+  inflation_radius_m: 0.85
+  max_linear_v_mps: 0.80
+  min_linear_v_mps: 0.15
+  max_angular_w_radps: 0.85
+
+safety:
+  high_confidence_thresh: 0.75
+  medium_confidence_thresh: 0.45
+  low_confidence_thresh: 0.25
+  cautious_velocity_mps: 0.35
+  crawl_velocity_mps: 0.15
+  tracking_lost_inlier_min: 15

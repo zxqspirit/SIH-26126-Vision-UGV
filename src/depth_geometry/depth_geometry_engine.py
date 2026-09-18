@@ -33,6 +33,7 @@ class DepthGeometryEngine:
         # 3. Obstacle detection & Rule 12 enforcement (< 5 ms)
         result = self.obstacle_detector.detect(points_base, valid_mask, ground_map, height_diff)
         result.plane_coeffs = plane_coeffs
+        result.points_base = points_base  # Optimization 3: Cache points_base to avoid duplicate projection
         result.latency_ms = (time.perf_counter() - start_time) * 1000.0
 
         # Subsample point cloud for visualization (e.g. 1 in every 16 points)

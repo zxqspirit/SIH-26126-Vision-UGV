@@ -5,7 +5,7 @@ Enforces Rule 11: Unknown terrain is never automatically free space.
 
 from __future__ import annotations
 
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Any
 import numpy as np
 import cv2
 
@@ -64,6 +64,14 @@ class Costmap2D:
 
         self._inflate_obstacles()
 
+    def update_from_traversability_result(self, trav: Any) -> None:
+        """Update costmap grid from TraversabilityMapEngine output and inflate obstacles."""
+        cg = np.copy(trav.cost_grid)
+        if hasattr(trav, "level_grid"):
+            cg[trav.level_grid == 5] = self.default_unknown_cost
+        self.grid = cg
+        self._inflate_obstacles()
+
     def _inflate_obstacles(self) -> None:
         """Inflate lethal obstacles using Euclidean distance transform."""
         self.inflated_grid = np.copy(self.grid)
@@ -88,6 +96,7 @@ class Costmap2D:
                 self.inflated_grid[inflation_zone] = np.maximum(self.inflated_grid[inflation_zone], inflated_costs)
         else:
             self.dist_to_lethal_m.fill(10.0)
+        self._has_synthetic_fallback = bool(np.all(self.dist_to_lethal_m == 10.0) and np.any(self.inflated_grid >= 254))
 
     def get_cost(self, x_m: float, y_m: float) -> int:
         """Get cost at world position in base_link frame. Unknown/out-of-bounds is non-free."""
@@ -109,22 +118,28 @@ class Costmap2D:
         Returns:
             is_clear: bool (False if in lethal zone)
             clearance_m: exact metric distance to nearest lethal obstacle
-            max_cost: maximum cost inside footprint
+            cell_cost: cost at robot position in inflated costmap
         """
         center_row, center_col = self.world_to_grid(x_m, y_m)
-        radius_cells = max(1, int(round(self.inscribed_radius / self.resolution_m)))
-
-        r_min = max(0, center_row - radius_cells)
-        r_max = min(self.grid_h, center_row + radius_cells + 1)
-        c_min = max(0, center_col - radius_cells)
-        c_max = min(self.grid_w, center_col + radius_cells + 1)
-
-        footprint_slice = self.inflated_grid[r_min:r_max, c_min:c_max]
-        if footprint_slice.size == 0:
+        if not self.is_in_bounds(center_row, center_col):
             return False, 0.0, 255
 
-        max_cost = int(np.max(footprint_slice))
-        is_clear = max_cost < 254
-        clearance_m = float(self.dist_to_lethal_m[min(center_row, self.grid_h - 1), min(center_col, self.grid_w - 1)])
+        cell_cost = int(self.inflated_grid[center_row, center_col])
+        if cell_cost >= 254:
+            return False, 0.0, cell_cost
 
-        return is_clear, clearance_m, max_cost
+        clearance_m = float(self.dist_to_lethal_m[center_row, center_col])
+
+        # Fast O(1) scalar check: only check local footprint slice if dist transform was uninitialized (clearance >= 9.9)
+        if clearance_m >= 9.9:
+            radius_cells = max(1, int(round(self.inscribed_radius / self.resolution_m)))
+            r_min = max(0, center_row - radius_cells)
+            r_max = min(self.grid_h, center_row + radius_cells + 1)
+            c_min = max(0, center_col - radius_cells)
+            c_max = min(self.grid_w, center_col + radius_cells + 1)
+            footprint_slice = self.inflated_grid[r_min:r_max, c_min:c_max]
+            if footprint_slice.size > 0 and np.max(footprint_slice) >= 254:
+                return False, 0.0, 254
+
+        is_clear = (cell_cost < 254) and (clearance_m > self.inscribed_radius)
+        return is_clear, clearance_m, cell_cost
