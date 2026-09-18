@@ -547,38 +547,43 @@
     /* Telemetry Grid */
     .telemetry-grid {
       display: grid;
-      grid-template-columns: 200px 210px 260px 240px 1fr;
+      grid-template-columns: 200px 210px 250px 280px 1fr;
       gap: 14px;
     }
 
-    .ugv-sensors-grid {
+    .software-health-grid {
       display: grid;
-      grid-template-columns: 1fr;
-      gap: 6px;
-      font-size: 11px;
+      grid-template-columns: 1fr 1fr;
+      gap: 5px 8px;
+      font-size: 10px;
       font-family: 'JetBrains Mono', monospace;
     }
 
-    .sensor-item {
+    .health-item {
       display: flex;
       justify-content: space-between;
       align-items: center;
       background: rgba(255, 255, 255, 0.03);
-      padding: 4px 8px;
+      padding: 4px 6px;
       border-radius: 4px;
       border: 1px solid rgba(255, 255, 255, 0.04);
+      min-width: 0;
     }
 
-    .sensor-label {
+    .health-label {
       color: var(--text-muted);
-      font-size: 10px;
+      font-size: 9.5px;
       font-weight: 600;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.3px;
+      white-space: nowrap;
+      margin-right: 4px;
     }
 
-    .sensor-val {
+    .health-val {
       color: var(--text-primary);
-      font-weight: 600;
+      font-weight: 700;
+      font-size: 10px;
+      white-space: nowrap;
     }
     .telemetry-card {
       background: var(--bg-card);
@@ -971,18 +976,21 @@
         </div>
       </div>
 
-      <!-- Card 4: UGV Hardware & CAN Telemetry -->
+      <!-- Card 4: Software System Health Telemetry -->
       <div class="telemetry-card">
         <div class="card-header">
-          <span>UGV Hardware Sensors</span>
-          <span style="color: var(--accent-emerald); font-family: monospace;">CAN_BUS OK</span>
+          <span>SOFTWARE SYSTEM HEALTH</span>
+          <span id="valSysHealthBadge" style="color: var(--accent-emerald); font-family: monospace;">PIPELINE_OK</span>
         </div>
-        <div class="ugv-sensors-grid">
-          <div class="sensor-item"><span class="sensor-label">BATTERY:</span> <span id="valUgvBattery" class="sensor-val" style="color: #10b981;">25.2V (92%)</span></div>
-          <div class="sensor-item"><span class="sensor-label">DRIVE MOTORS:</span> <span id="valUgvMotors" class="sensor-val">L: 148 | R: 144 RPM</span></div>
-          <div class="sensor-item"><span class="sensor-label">IMU P/R:</span> <span id="valUgvImu" class="sensor-val">+1.8° / -0.4°</span></div>
-          <div class="sensor-item"><span class="sensor-label">TRACTION SLIP:</span> <span id="valUgvSlip" class="sensor-val" style="color: #06b6d4;">1.8% (Nominal)</span></div>
-          <div class="sensor-item"><span class="sensor-label">TEMP / CURRENT:</span> <span id="valUgvTemp" class="sensor-val">37.4°C | 4.2A</span></div>
+        <div class="software-health-grid">
+          <div class="health-item"><span class="health-label">Camera Input</span> <span id="valHealthCamera" class="health-val" style="color: var(--accent-emerald);">OK</span></div>
+          <div class="health-item"><span class="health-label">Frame Rate</span> <span id="valHealthFps" class="health-val" style="color: var(--accent-cyan);">9.2 FPS</span></div>
+          <div class="health-item"><span class="health-label">Depth Validity</span> <span id="valHealthDepth" class="health-val" style="color: var(--accent-emerald);">87%</span></div>
+          <div class="health-item"><span class="health-label">Perception</span> <span id="valHealthPerception" class="health-val" style="color: var(--accent-emerald);">RUNNING</span></div>
+          <div class="health-item"><span class="health-label">SLAM</span> <span id="valHealthSlam" class="health-val" style="color: var(--accent-emerald);">TRACKING</span></div>
+          <div class="health-item"><span class="health-label">Fusion</span> <span id="valHealthFusion" class="health-val" style="color: var(--accent-emerald);">RUNNING</span></div>
+          <div class="health-item"><span class="health-label">Planner</span> <span id="valHealthPlanner" class="health-val" style="color: var(--accent-emerald);">ACTIVE</span></div>
+          <div class="health-item"><span class="health-label">Safety Arbiter</span> <span id="valHealthArbiter" class="health-val" style="color: var(--accent-emerald);">ARMED</span></div>
         </div>
       </div>
 
@@ -1129,8 +1137,8 @@
         document.getElementById("compassNeedle").style.transform = `rotate(${deg}deg)`;
       }
 
-      // Update UGV Hardware Sensors Panel
-      updateUgvHardwareSensors(linVel, angVel, isSafeStopped);
+      // Update Software System Health Diagnostics Panel
+      updateSoftwareHealth(data, isSafeStopped, isCautionCrawling, isLocLost);
 
       // Status Pill
       const statusPill = document.getElementById("statusPill");
@@ -1279,29 +1287,72 @@
       });
     }
 
-    function updateUgvHardwareSensors(linVel, angVel, isStopped) {
-      const elMotors = document.getElementById("valUgvMotors");
-      const elSlip = document.getElementById("valUgvSlip");
-      const elTemp = document.getElementById("valUgvTemp");
-      const elImu = document.getElementById("valUgvImu");
-      if (!elMotors) return;
+    function updateSoftwareHealth(data, isStopped, isCaution, isLocLost) {
+      const elCam = document.getElementById("valHealthCamera");
+      const elFps = document.getElementById("valHealthFps");
+      const elDepth = document.getElementById("valHealthDepth");
+      const elPerc = document.getElementById("valHealthPerception");
+      const elSlam = document.getElementById("valHealthSlam");
+      const elFus = document.getElementById("valHealthFusion");
+      const elPlan = document.getElementById("valHealthPlanner");
+      const elArb = document.getElementById("valHealthArbiter");
+      const elBadge = document.getElementById("valSysHealthBadge");
+      if (!elCam) return;
 
-      if (isStopped) {
-        elMotors.innerText = "L: 0 | R: 0 RPM";
-        elMotors.style.color = "var(--text-muted)";
-        elSlip.innerText = "0.0% (Standstill)";
-        elSlip.style.color = "var(--accent-emerald)";
-        elTemp.innerText = "34.1°C | 0.4A";
-        elImu.innerText = "0.0° / 0.0°";
-      } else {
-        const leftRpm = Math.round(145 + linVel * 40 + angVel * 30);
-        const rightRpm = Math.round(145 + linVel * 40 - angVel * 30);
-        elMotors.innerText = `L: ${leftRpm} | R: ${rightRpm} RPM`;
-        elMotors.style.color = "";
-        elSlip.innerText = "1.8% (Nominal)";
-        elSlip.style.color = "#06b6d4";
-        elTemp.innerText = "37.4°C | 4.2A";
-        elImu.innerText = "+1.8° / -0.4°";
+      const diag = data.diagnostics || {};
+
+      // 1. Camera Input
+      const camStatus = diag.camera_input || (isLocLost ? "DEGRADED" : "OK");
+      elCam.innerText = camStatus;
+      elCam.style.color = (camStatus === "OK") ? "var(--accent-emerald)" : (camStatus === "DISCONNECTED" ? "var(--accent-rose)" : "var(--accent-amber)");
+
+      // 2. Frame Rate
+      const fpsVal = diag.frame_rate !== undefined ? diag.frame_rate : (data.fps ? Number(data.fps).toFixed(1) : "9.2");
+      elFps.innerText = `${fpsVal} FPS`;
+      elFps.style.color = Number(fpsVal) >= 7.0 ? "var(--accent-cyan)" : "var(--accent-amber)";
+
+      // 3. Depth Validity
+      const depthPct = diag.depth_validity_pct !== undefined ? diag.depth_validity_pct : (isLocLost ? 72 : (isCaution ? 45 : 87));
+      elDepth.innerText = `${Math.round(depthPct)}%`;
+      elDepth.style.color = depthPct >= 70 ? "var(--accent-emerald)" : (depthPct >= 35 ? "var(--accent-amber)" : "var(--accent-rose)");
+
+      // 4. Perception
+      const percStatus = diag.perception || (isLocLost ? "LOW_FEATURES" : "RUNNING");
+      elPerc.innerText = percStatus;
+      elPerc.style.color = (percStatus === "RUNNING" || percStatus === "NOMINAL") ? "var(--accent-emerald)" : "var(--accent-amber)";
+
+      // 5. SLAM
+      const slamStatus = diag.slam || (isLocLost ? "TRACKING_LOST" : "TRACKING");
+      elSlam.innerText = slamStatus;
+      elSlam.style.color = (slamStatus === "TRACKING") ? "var(--accent-emerald)" : "var(--accent-rose)";
+
+      // 6. Fusion
+      const fusStatus = diag.fusion || (isLocLost || isCaution ? "DEGRADED" : "RUNNING");
+      elFus.innerText = fusStatus;
+      elFus.style.color = (fusStatus === "RUNNING") ? "var(--accent-emerald)" : "var(--accent-amber)";
+
+      // 7. Planner
+      const planStatus = diag.planner || (isLocLost ? "E_STOP_HALTED" : (isCaution ? "CAUTION_INFLATED" : "ACTIVE"));
+      elPlan.innerText = planStatus;
+      elPlan.style.color = (planStatus === "ACTIVE") ? "var(--accent-emerald)" : (planStatus === "CAUTION_INFLATED" ? "var(--accent-amber)" : "var(--accent-rose)");
+
+      // 8. Safety Arbiter
+      const arbStatus = diag.safety_arbiter || (isStopped || isLocLost ? "TRIPPED (E-STOP)" : (isCaution ? "ARMED (THROTTLED)" : "ARMED"));
+      elArb.innerText = arbStatus;
+      elArb.style.color = (arbStatus === "ARMED") ? "var(--accent-emerald)" : (arbStatus.includes("THROTTLED") ? "var(--accent-amber)" : "var(--accent-rose)");
+
+      // Health Header Badge
+      if (elBadge) {
+        if (isStopped || isLocLost || arbStatus.includes("TRIPPED")) {
+          elBadge.innerText = "E_STOP_TRIPPED";
+          elBadge.style.color = "var(--accent-rose)";
+        } else if (isCaution || arbStatus.includes("THROTTLED") || depthPct < 60) {
+          elBadge.innerText = "DEGRADED_HOLD";
+          elBadge.style.color = "var(--accent-amber)";
+        } else {
+          elBadge.innerText = "PIPELINE_OK";
+          elBadge.style.color = "var(--accent-emerald)";
+        }
       }
     }
 
