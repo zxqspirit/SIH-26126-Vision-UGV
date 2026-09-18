@@ -824,19 +824,19 @@
         </div>
       </div>
 
-      <!-- Monitor 2: 3D Metric Depth Geometry -->
+      <!-- Monitor 2: Depth Geometry / Estimation -->
       <div class="monitor-card">
         <div class="monitor-header">
-          <span class="monitor-title">2. Metric Depth Geometry</span>
-          <span style="font-size: 10px; color: var(--text-muted); font-family: monospace;">TURBO [0m-10m]</span>
+          <span class="monitor-title" id="depthPanelTitle">2. Metric Depth</span>
+          <span id="depthSourceBadge" style="font-size: 10px; color: var(--accent-cyan); font-family: monospace; font-weight: 700;">Source: Real RGB-D</span>
         </div>
         <div class="monitor-body">
-          <img id="imgDepth" class="monitor-img" src="" alt="Depth Colormap">
+          <img id="imgDepth" class="monitor-img" src="" alt="Depth Visualization">
         </div>
         <div class="trav-legend">
-          <div class="legend-item"><span style="color: #60a5fa;">Blue: Near (0.5m)</span></div>
-          <div class="legend-item"><span style="color: #fbbf24;">Yellow: Mid (3.0m)</span></div>
-          <div class="legend-item"><span style="color: #f87171;">Red: Far (10m)</span></div>
+          <div class="legend-item"><span style="color: #60a5fa;" id="depthNearLegend">Blue: Near (0.5m)</span></div>
+          <div class="legend-item"><span style="color: #fbbf24;" id="depthMidLegend">Yellow: Mid (3.0m)</span></div>
+          <div class="legend-item"><span style="color: #f87171;" id="depthFarLegend">Red: Far (10m)</span></div>
         </div>
       </div>
 
@@ -1082,6 +1082,37 @@
         }
         document.getElementById("imgDepth").src = "data:image/jpeg;base64," + data.images.depth;
         document.getElementById("imgCostmap").src = "data:image/jpeg;base64," + data.images.costmap;
+
+        // Dynamic Depth Source & Metric Truth Badge
+        const dInfo = data.depth_info || {};
+        const isMetric = (dInfo.is_metric !== undefined) ? dInfo.is_metric : (currentScenario.startsWith("scenario_"));
+        const depthTitleEl = document.getElementById("depthPanelTitle");
+        const depthBadgeEl = document.getElementById("depthSourceBadge");
+        const depthNearEl = document.getElementById("depthNearLegend");
+        const depthMidEl = document.getElementById("depthMidLegend");
+        const depthFarEl = document.getElementById("depthFarLegend");
+
+        if (isMetric) {
+          if (depthTitleEl) depthTitleEl.innerText = "2. Metric Depth";
+          if (depthBadgeEl) {
+            depthBadgeEl.innerText = "Source: Real RGB-D";
+            depthBadgeEl.style.color = "var(--accent-cyan)";
+            depthBadgeEl.title = "Calibrated physical metric depth in meters";
+          }
+          if (depthNearEl) depthNearEl.innerText = "Blue: Near (0.5m)";
+          if (depthMidEl) depthMidEl.innerText = "Yellow: Mid (3.0m)";
+          if (depthFarEl) depthFarEl.innerText = "Red: Far (10m)";
+        } else {
+          if (depthTitleEl) depthTitleEl.innerText = "2. Depth Estimation";
+          if (depthBadgeEl) {
+            depthBadgeEl.innerText = "Estimated / Monocular";
+            depthBadgeEl.style.color = "var(--accent-amber)";
+            depthBadgeEl.title = "Monocular depth estimation (relative scale, non-metric)";
+          }
+          if (depthNearEl) depthNearEl.innerText = "Blue: Close";
+          if (depthMidEl) depthMidEl.innerText = "Yellow: Intermediate";
+          if (depthFarEl) depthFarEl.innerText = "Red: Distant";
+        }
       }
 
       // Motion & UGV Telemetry

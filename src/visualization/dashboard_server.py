@@ -566,6 +566,18 @@ def serialize_frame_telemetry(
         is_emergency = tele["safety"].is_emergency_stop
         explain = compute_explainability(tele, cmd, cur_idx)
 
+    # Depth source honesty check: distinguish calibrated real RGB-D from monocular estimation
+    is_real_rgbd = scenario_name in [
+        "scenario_1_open_path",
+        "scenario_2_sudden_obstacle",
+        "scenario_3_terrain_boundary",
+        "scenario_4_depth_degradation",
+        "scenario_5_visual_degradation",
+    ]
+    depth_title = "2. Metric Depth" if is_real_rgbd else "2. Depth Estimation"
+    depth_source_badge = "Source: Real RGB-D" if is_real_rgbd else "Estimated / Monocular"
+    depth_scale_note = "Calibrated Ground Truth Scale (meters)" if is_real_rgbd else "Monocular Depth Inference (Relative Scale)"
+
     # Derive Software System Health diagnostics (authentic software pipeline metrics)
     if is_scenario_4:
         if cur_idx < 5:
@@ -587,6 +599,17 @@ def serialize_frame_telemetry(
 
     return {
         "scenario": scenario_name,
+        "depth_info": {
+            "title": depth_title,
+            "source": depth_source_badge,
+            "is_metric": is_real_rgbd,
+            "scale_note": depth_scale_note,
+            "legend": {
+                "near": "Blue: Near (0.5m)" if is_real_rgbd else "Blue: Close",
+                "mid": "Yellow: Mid (3.0m)" if is_real_rgbd else "Yellow: Intermediate",
+                "far": "Red: Far (10m)" if is_real_rgbd else "Red: Distant",
+            },
+        },
         "diagnostics": {
             "camera_input": diag_camera,
             "frame_rate": diag_fps,
