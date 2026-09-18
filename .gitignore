@@ -172,3 +172,6 @@ models/checkpoints/**/*.onnx
 
 
 !demo/sample_data/**
+
+# Runtime user uploads for dashboard
+datasets/uploads/

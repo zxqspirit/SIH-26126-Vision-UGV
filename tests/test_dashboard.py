@@ -322,3 +322,95 @@ def test_dashboard_http_server_endpoints():
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_dashboard_upload_image_and_video():
+    """Test POST /api/upload with image and video to execute the full UGV pipeline."""
+    import cv2
+    server = ThreadingHTTPServer(("127.0.0.1", 0), DashboardHandler)
+    port = server.server_port
+
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+    base_url = f"http://127.0.0.1:{port}"
+
+    try:
+        # 1. Create a synthetic test image (640x480 RGB)
+        dummy_img = np.zeros((480, 640, 3), dtype=np.uint8)
+        dummy_img[240:, :] = [34, 139, 34]  # Green ground
+        dummy_img[:240, :] = [235, 206, 135] # Sky
+        success, img_encoded = cv2.imencode(".jpg", dummy_img)
+        assert success
+        img_bytes = img_encoded.tobytes()
+
+        # Build multipart/form-data body
+        boundary = "----WebKitFormBoundarySIH26126Test"
+        c_type = f"multipart/form-data; boundary={boundary}"
+        
+        parts = [
+            f"--{boundary}".encode("utf-8"),
+            b'Content-Disposition: form-data; name="file"; filename="field_test.jpg"',
+            b'Content-Type: image/jpeg',
+            b'',
+            img_bytes,
+            f"--{boundary}--".encode("utf-8"),
+            b''
+        ]
+        body = b"\r\n".join(parts)
+
+        # POST /api/upload
+        req = urllib.request.Request(
+            f"{base_url}/api/upload",
+            data=body,
+            headers={
+                "Content-Type": c_type,
+                "Content-Length": str(len(body)),
+            },
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            assert resp.status == 200
+            data = json.loads(resp.read().decode("utf-8"))
+            assert data["status"] == "success"
+            assert data["scenario_id"] == "uploaded_image"
+            assert data["media_type"] == "image"
+            assert "telemetry" in data
+            telem = data["telemetry"]
+            assert "judge_state" in telem
+            assert "motion" in telem
+            assert "linear_velocity" in telem["motion"]
+            assert "angular_velocity" in telem["motion"]
+            assert "confidence_breakdown" in telem
+            assert "explainability" in telem
+            assert "images" in telem
+
+        # Verify scenario is registered in /api/scenarios
+        req_scen = urllib.request.urlopen(f"{base_url}/api/scenarios", timeout=5)
+        scen_data = json.loads(req_scen.read().decode("utf-8"))
+        scen_ids = [s["id"] for s in scen_data["scenarios"]]
+        assert "uploaded_image" in scen_ids
+
+        # Verify telemetry can be queried via /api/telemetry
+        req_get = urllib.request.urlopen(f"{base_url}/api/telemetry?scenario=uploaded_image&frame=0", timeout=10)
+        assert req_get.status == 200
+        get_telem = json.loads(req_get.read().decode("utf-8"))
+        assert get_telem["frame_id"] == 0
+        assert get_telem["scenario"] == "uploaded_image"
+        assert "judge_state" in get_telem
+
+        # Test empty payload failure
+        empty_req = urllib.request.Request(
+            f"{base_url}/api/upload",
+            data=b"",
+            headers={"Content-Length": "0"},
+            method="POST"
+        )
+        try:
+            urllib.request.urlopen(empty_req, timeout=5)
+            assert False, "Should have raised HTTPError for empty payload"
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+
+    finally:
+        server.shutdown()
+        server.server_close()

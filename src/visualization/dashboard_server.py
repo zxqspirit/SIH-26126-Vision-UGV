@@ -33,6 +33,8 @@ from typing import Any, Dict, Optional, Tuple
 
 import cv2
 import numpy as np
+import email
+from email.message import Message
 
 # Ensure repository root is on sys.path
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -46,6 +48,8 @@ from src.sensors.live_pipeline import LiveCameraStreamer, MockLiveCamera, ImageS
 
 PORT = 5000
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+UPLOAD_BASE = os.path.join(REPO_ROOT, "datasets", "uploads")
+os.makedirs(UPLOAD_BASE, exist_ok=True)
 
 # Global caches
 LOADERS: Dict[str, OutdoorDatasetLoader] = {}
@@ -58,12 +62,130 @@ LIVE_PIPELINE: Optional[NavigationPipeline] = None
 CURRENT_LIVE_SCENARIO: Optional[str] = None
 
 
+
+
+def parse_upload_payload(headers: Dict[str, str], body_bytes: bytes) -> Tuple[str, bytes]:
+    """Extract filename and file bytes from multipart/form-data or raw octet stream."""
+    ct = headers.get("content-type", headers.get("Content-Type", ""))
+    if "multipart/form-data" in ct:
+        msg = email.message_from_bytes(f"Content-Type: {ct}\r\n\r\n".encode("utf-8") + body_bytes)
+        for part in msg.walk():
+            filename = part.get_filename()
+            if filename:
+                payload = part.get_payload(decode=True)
+                return filename, payload
+        # Fallback if no filename in part
+        return "uploaded_media.jpg", body_bytes
+
+    # Raw binary upload fallback
+    return "uploaded_media.jpg", body_bytes
+
+
+def process_uploaded_media(filename: str, data_bytes: bytes) -> Dict[str, Any]:
+    """Process uploaded image or video into an OutdoorDatasetLoader scenario."""
+    ext = os.path.splitext(filename)[1].lower()
+    is_video = ext in [".mp4", ".avi", ".mov", ".mkv", ".webm"]
+    scenario_id = "uploaded_video" if is_video else "uploaded_image"
+    scenario_dir = os.path.join(UPLOAD_BASE, scenario_id)
+    rgb_dir = os.path.join(scenario_dir, "rgb")
+    depth_dir = os.path.join(scenario_dir, "depth")
+    os.makedirs(rgb_dir, exist_ok=True)
+    os.makedirs(depth_dir, exist_ok=True)
+
+    # Clean previous files in target scenario
+    for folder in [rgb_dir, depth_dir]:
+        for f in os.listdir(folder):
+            try:
+                os.remove(os.path.join(folder, f))
+            except Exception:
+                pass
+
+    raw_temp_path = os.path.join(scenario_dir, f"raw_upload{ext}")
+    with open(raw_temp_path, "wb") as f:
+        f.write(data_bytes)
+
+    extracted_frames = 0
+    if not is_video:
+        # Process single image
+        bgr = cv2.imread(raw_temp_path)
+        if bgr is None:
+            raise ValueError(f"Failed to decode uploaded image: {filename}")
+        if (bgr.shape[1], bgr.shape[0]) != (640, 480):
+            bgr = cv2.resize(bgr, (640, 480), interpolation=cv2.INTER_AREA)
+
+        cv2.imwrite(os.path.join(rgb_dir, "frame_0000.jpg"), bgr)
+
+        # Generate realistic perspective ground-plane depth gradient (1.0m to 10.0m)
+        h, w = 480, 640
+        depth_m = np.zeros((h, w), dtype=np.float32)
+        horizon = int(h * 0.45)
+        ground_rows = h - horizon
+        grad = np.linspace(10.0, 1.2, ground_rows, dtype=np.float32)[:, np.newaxis]
+        depth_m[horizon:, :] = np.tile(grad, (1, w))
+        np.save(os.path.join(depth_dir, "frame_0000.npy"), depth_m)
+
+        extracted_frames = 1
+    else:
+        # Process video frames (sample up to 60 frames)
+        cap = cv2.VideoCapture(raw_temp_path)
+        if not cap.isOpened():
+            raise ValueError(f"Failed to decode uploaded video: {filename}")
+
+        idx = 0
+        max_frames = 60
+        while cap.isOpened() and idx < max_frames:
+            ret, bgr = cap.read()
+            if not ret or bgr is None:
+                break
+            if (bgr.shape[1], bgr.shape[0]) != (640, 480):
+                bgr = cv2.resize(bgr, (640, 480), interpolation=cv2.INTER_AREA)
+
+            frame_name = f"frame_{idx:04d}"
+            cv2.imwrite(os.path.join(rgb_dir, f"{frame_name}.jpg"), bgr)
+
+            # Synthetic perspective ground depth
+            h, w = 480, 640
+            depth_m = np.zeros((h, w), dtype=np.float32)
+            horizon = int(h * 0.45)
+            ground_rows = h - horizon
+            grad = np.linspace(10.0, 1.2, ground_rows, dtype=np.float32)[:, np.newaxis]
+            depth_m[horizon:, :] = np.tile(grad, (1, w))
+            np.save(os.path.join(depth_dir, f"{frame_name}.npy"), depth_m)
+            idx += 1
+
+        cap.release()
+        extracted_frames = idx
+        if extracted_frames == 0:
+            raise ValueError("No valid video frames could be extracted from uploaded video")
+
+    metadata = {
+        "scenario_name": scenario_id,
+        "source_filename": filename,
+        "media_type": "video" if is_video else "image",
+        "total_frames": extracted_frames,
+        "resolution": [640, 480],
+    }
+    with open(os.path.join(scenario_dir, "metadata.json"), "w", encoding="utf-8") as f:
+        json.dump(metadata, f, indent=2)
+
+    return {
+        "status": "success",
+        "scenario_id": scenario_id,
+        "media_type": "video" if is_video else "image",
+        "total_frames": extracted_frames,
+        "filename": filename,
+    }
+
 def get_or_create_pipeline(scenario_name: str) -> Tuple[OutdoorDatasetLoader, NavigationPipeline]:
     """Retrieve or instantiate pipeline and dataset loader for scenario."""
     if scenario_name not in LOADERS:
         scenario_dir = os.path.join(REPO_ROOT, "datasets", "processed", scenario_name)
         if not os.path.exists(scenario_dir):
-            raise FileNotFoundError(f"Scenario not found: {scenario_dir}")
+            upload_dir = os.path.join(UPLOAD_BASE, scenario_name)
+            if os.path.exists(upload_dir):
+                scenario_dir = upload_dir
+            else:
+                raise FileNotFoundError(f"Scenario not found: {scenario_name}")
         LOADERS[scenario_name] = OutdoorDatasetLoader(scenario_dir)
         PIPELINES[scenario_name] = NavigationPipeline()
         FRAME_CACHE[scenario_name] = {}
@@ -173,6 +295,7 @@ def serialize_frame_telemetry(
     tele: Dict[str, Any],
     pipeline: NavigationPipeline,
     cur_idx: int,
+    scenario_name: str = "",
 ) -> Dict[str, Any]:
     """Encode images and format JSON telemetry from a processed frame."""
     # Optimization 1: Fast Vectorized Visualization Serialization
@@ -246,6 +369,7 @@ def serialize_frame_telemetry(
     explain = compute_explainability(tele, cmd)
 
     return {
+        "scenario": scenario_name,
         "frame_id": cur_idx,
         "timestamp": round(float(frame.timestamp), 3),
         "fps": tele["fps"],
@@ -328,7 +452,7 @@ def process_and_cache_frame(scenario_name: str, frame_idx: int) -> Dict[str, Any
             if frame is None:
                 break
             cmd, tele = pipeline.process_frame(frame)
-            cached_item = serialize_frame_telemetry(frame, cmd, tele, pipeline, cur_idx)
+            cached_item = serialize_frame_telemetry(frame, cmd, tele, pipeline, cur_idx, scenario_name)
             FRAME_CACHE[scenario_name][cur_idx] = cached_item
         cur_idx += 1
 
@@ -356,6 +480,12 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 {"id": "live_webcam", "name": "LIVE SENSOR: Real USB / DirectShow Camera (Device 0)"},
                 {"id": "live_camera", "name": "LIVE SENSOR: Virtual Simulated Stream (Single-Slot Ring Buffer)"},
             ]
+            img_up = os.path.join(UPLOAD_BASE, "uploaded_image", "rgb", "frame_0000.jpg")
+            if os.path.exists(img_up):
+                scenarios.insert(0, {"id": "uploaded_image", "name": "UPLOADED IMAGE: Custom Uploaded Frame"})
+            vid_up = os.path.join(UPLOAD_BASE, "uploaded_video", "rgb", "frame_0000.jpg")
+            if os.path.exists(vid_up):
+                scenarios.insert(0, {"id": "uploaded_video", "name": "UPLOADED VIDEO: Custom Uploaded Sequence"})
             self._send_json({"scenarios": scenarios})
             return
 
@@ -489,6 +619,46 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self._send_json(data)
         except Exception as e:
             self._send_json({"error": str(e)}, status=500)
+
+    
+    def do_POST(self) -> None:
+        """Handle file uploads for custom user images and videos to run model."""
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
+
+        if path == "/api/upload":
+            try:
+                content_length = int(self.headers.get("Content-Length", 0))
+                if content_length <= 0:
+                    self._send_json({"error": "Empty upload payload"}, status=400)
+                    return
+
+                raw_body = self.rfile.read(content_length)
+                filename, file_bytes = parse_upload_payload(dict(self.headers), raw_body)
+
+                if not file_bytes:
+                    self._send_json({"error": "No valid file data received"}, status=400)
+                    return
+
+                res = process_uploaded_media(filename, file_bytes)
+                scenario_id = res["scenario_id"]
+
+                # Reset loaders and caches for this scenario
+                LOADERS.pop(scenario_id, None)
+                PIPELINES.pop(scenario_id, None)
+                FRAME_CACHE.pop(scenario_id, None)
+
+                # If single image, pre-cache and return immediate telemetry
+                if res["media_type"] == "image":
+                    telemetry = process_and_cache_frame(scenario_id, 0)
+                    res["telemetry"] = telemetry
+
+                self._send_json(res)
+            except Exception as e:
+                self._send_json({"error": str(e)}, status=500)
+            return
+
+        self._send_json({"error": f"Unknown POST endpoint: {path}"}, status=404)
 
     def _send_json(self, data: Any, status: int = 200) -> None:
         payload = json.dumps(data).encode("utf-8")

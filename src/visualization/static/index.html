@@ -82,6 +82,41 @@
       font-family: 'JetBrains Mono', monospace;
     }
 
+        .upload-btn-wrap {
+      display: inline-flex;
+      align-items: center;
+    }
+
+    .upload-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      background: linear-gradient(135deg, rgba(0, 240, 255, 0.18), rgba(0, 110, 255, 0.15));
+      color: #00f0ff;
+      border: 1px solid rgba(0, 240, 255, 0.45);
+      padding: 7px 14px;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 12px;
+      cursor: pointer;
+      box-shadow: 0 0 10px rgba(0, 240, 255, 0.2);
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .upload-btn:hover {
+      background: linear-gradient(135deg, rgba(0, 240, 255, 0.35), rgba(0, 110, 255, 0.3));
+      border-color: #00f0ff;
+      box-shadow: 0 0 16px rgba(0, 240, 255, 0.45);
+      transform: translateY(-1px);
+    }
+
+    .upload-btn:disabled {
+      opacity: 0.55;
+      cursor: wait;
+      transform: none;
+      box-shadow: none;
+    }
+
     .header-controls {
       display: flex;
       align-items: center;
@@ -663,6 +698,13 @@
       </div>
     </div>
     <div class="header-controls">
+      <div class="upload-btn-wrap">
+        <button type="button" class="upload-btn" id="btnUploadMedia" onclick="document.getElementById('mediaUploadInput').click()" title="Upload custom image or video to run UGV perception, depth, and planning pipeline">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <span id="uploadBtnText">Upload Media</span>
+        </button>
+        <input type="file" id="mediaUploadInput" style="display:none;" accept="image/*,video/*" onchange="handleMediaUpload(this)">
+      </div>
       <select id="scenarioSelect" onchange="onScenarioChange()">
         <option value="scenario_1_open_path">Scenario 1: Open Traversable Trail</option>
         <option value="scenario_2_sudden_obstacle">Scenario 2: Sudden Positive Obstacle</option>
@@ -1303,6 +1345,84 @@
       loadFrame(currentFrame);
     }
 
+    async function handleMediaUpload(input) {
+      if (!input.files || input.files.length === 0) return;
+      const file = input.files[0];
+      const btn = document.getElementById("btnUploadMedia");
+      const btnText = document.getElementById("uploadBtnText");
+      const origHtml = btnText.innerHTML;
+
+      btn.disabled = true;
+      btnText.innerText = "Running Model...";
+
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const resp = await fetch("/api/upload", {
+          method: "POST",
+          body: formData
+        });
+
+        if (!resp.ok) {
+          const errData = await resp.json().catch(() => ({ error: "Server error" }));
+          alert("Model inference error: " + (errData.error || resp.statusText));
+          return;
+        }
+
+        const data = await resp.json();
+        const scenarioId = data.scenario_id || data.scenario;
+
+        // Refresh dropdown list from server so all options are synchronized
+        await syncScenarios();
+
+        const select = document.getElementById("scenarioSelect");
+        select.value = scenarioId;
+        currentScenario = scenarioId;
+        currentFrame = 0;
+
+        if (data.telemetry) {
+          latestData = data.telemetry;
+          totalFrames = data.total_frames || 1;
+          renderTelemetry(data.telemetry);
+        } else {
+          await loadFrame(0);
+        }
+      } catch (err) {
+        console.error("Upload failed:", err);
+        alert("Upload failed: " + err.message);
+      } finally {
+        btn.disabled = false;
+        btnText.innerHTML = origHtml;
+        input.value = "";
+      }
+    }
+
+    async function syncScenarios() {
+      try {
+        const res = await fetch("/api/scenarios");
+        if (!res.ok) return;
+        const data = await res.json();
+        const select = document.getElementById("scenarioSelect");
+        const curVal = select.value;
+        select.innerHTML = "";
+        for (const s of data.scenarios) {
+          const opt = document.createElement("option");
+          opt.value = s.id;
+          opt.text = s.name;
+          select.appendChild(opt);
+        }
+        if ([...select.options].some(o => o.value === curVal)) {
+          select.value = curVal;
+        } else if (select.options.length > 0) {
+          select.value = select.options[0].value;
+          currentScenario = select.value;
+        }
+      } catch (e) {
+        console.warn("Could not sync scenarios:", e);
+      }
+    }
+
     function onScenarioChange() {
       currentScenario = document.getElementById("scenarioSelect").value;
       currentFrame = 0;
@@ -1325,7 +1445,8 @@
     }
 
     // Initial load
-    window.addEventListener("DOMContentLoaded", () => {
+    window.addEventListener("DOMContentLoaded", async () => {
+      await syncScenarios();
       loadFrame(0);
     });
   </script>
