@@ -669,7 +669,9 @@
         <option value="scenario_3_terrain_boundary">Scenario 3: Non-Traversable Bushes</option>
         <option value="scenario_4_depth_degradation">Scenario 4: Glare & Invalid Depth (Rule 12)</option>
         <option value="scenario_5_visual_degradation">Scenario 5: Visual Feature Loss (Rule 13 E-Stop)</option>
-        <option value="live_camera">Live Camera Stream (Real-Time Sensor)</option>
+        <option value="live_kaggle_offroad">LIVE SENSOR: Kaggle Off-Road Trail Stream (515 Frames)</option>
+        <option value="live_webcam">LIVE SENSOR: Real USB / DirectShow Camera (Device 0)</option>
+        <option value="live_camera">LIVE SENSOR: Virtual Simulated Camera</option>
       </select>
       <div id="statusPill" class="status-pill">
         <span class="pulse-dot"></span>
@@ -919,8 +921,8 @@
     async function loadFrame(idx) {
       try {
         let url = `/api/telemetry?scenario=${currentScenario}&frame=${idx}`;
-        if (currentScenario === "live_camera") {
-          url = `/api/live_telemetry`;
+        if (currentScenario.startsWith("live_")) {
+          url = `/api/live_telemetry?scenario=${currentScenario}`;
         }
         const res = await fetch(url);
         if (!res.ok) return;
@@ -937,9 +939,12 @@
     function renderTelemetry(data) {
       // Scrubber
       const slider = document.getElementById("frameSlider");
-      if (currentScenario === "live_camera") {
+      if (currentScenario.startsWith("live_")) {
         slider.disabled = true;
-        document.getElementById("frameCounter").innerText = `LIVE (Drop: ${data.pipeline_stats?.dropped_frames || 0})`;
+        const drops = data.live_health?.dropped_frames ?? (data.pipeline_stats?.dropped_frames || 0);
+        const srcLabel = data.live_sensor?.source_label || "LIVE SENSOR";
+        const capFps = data.live_sensor?.capture_fps ? ` @ ${data.live_sensor.capture_fps} FPS` : "";
+        document.getElementById("frameCounter").innerText = `${srcLabel}${capFps} [Drops: ${drops}]`;
       } else {
         slider.disabled = false;
         slider.max = totalFrames - 1;
@@ -1268,7 +1273,7 @@
         icon.innerHTML = "&#10074;&#10074;";
         btn.innerHTML = `<span id="playIcon">&#10074;&#10074;</span> Pause`;
         playInterval = setInterval(() => {
-          if (currentScenario === "live_camera") {
+          if (currentScenario.startsWith("live_")) {
             loadFrame(0);
           } else {
             if (currentFrame >= totalFrames - 1) {

@@ -122,8 +122,10 @@ def test_invalid_frame_filtering():
 
     assert streamer.start() is True
 
+    # Give acquisition thread a brief startup window
+    time.sleep(0.05)
     # Attempt to read: should time out or return None because corrupt frames are discarded
-    frame = streamer.read_next_frame(timeout_s=0.15)
+    frame = streamer.read_next_frame(timeout_s=0.25)
     assert frame is None, "Corrupt frames must never be passed to downstream consumer"
 
     metrics = streamer.get_health_metrics()
@@ -195,3 +197,34 @@ def test_downstream_pipeline_compatibility():
     assert "traversability" in telemetry
     assert "decision" in telemetry
     assert "safety" in telemetry
+
+
+def test_image_sequence_camera():
+    """Verify ImageSequenceCamera streams offline folders as live sensor frames."""
+    import tempfile
+    import os
+    import cv2
+    from src.sensors.live_pipeline import ImageSequenceCamera
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        # Generate 3 dummy frames
+        for i in range(3):
+            dummy = np.full((120, 160, 3), i * 50, dtype=np.uint8)
+            cv2.imwrite(os.path.join(tmp_dir, f"frame_{i:04d}.jpg"), dummy)
+
+        cam = ImageSequenceCamera(tmp_dir, target_fps=20.0, frame_width=320, frame_height=240, loop=True)
+        streamer = LiveCameraStreamer(camera_source=cam, target_fps=20.0)
+
+        assert streamer.start() is True
+        time.sleep(0.05)
+
+        frame = streamer.read_next_frame(timeout_s=0.5)
+        assert frame is not None
+        assert frame.rgb.shape == (240, 320, 3)
+        assert frame.depth_m is not None
+        assert frame.depth_m.shape == (240, 320)
+
+        metrics = streamer.get_health_metrics()
+        assert metrics.total_captured >= 1
+
+        streamer.stop(timeout_s=1.0)

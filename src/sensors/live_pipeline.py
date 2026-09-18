@@ -15,6 +15,8 @@ Features:
 
 from __future__ import annotations
 
+import os
+
 import queue
 import threading
 import time
@@ -96,6 +98,99 @@ class MockLiveCamera:
     def release(self) -> None:
         self._is_opened = False
 
+
+
+
+class ImageSequenceCamera:
+    """Streams a folder of image frames as a live real-time camera source.
+
+    Supports offline datasets (e.g. Kaggle off-road dataset, recorded drive sequences)
+    emulating an active hardware camera at a fixed target FPS with realistic metric depth.
+    """
+
+    def __init__(
+        self,
+        image_dir: str,
+        target_fps: float = 15.0,
+        frame_width: int = 640,
+        frame_height: int = 480,
+        simulate_depth: bool = True,
+        loop: bool = True,
+    ) -> None:
+        self.image_dir = image_dir
+        self.target_fps = target_fps
+        self.width = frame_width
+        self.height = frame_height
+        self.simulate_depth = simulate_depth
+        self.loop = loop
+
+        self._image_paths: List[str] = []
+        self._cur_idx = 0
+        self._is_opened = False
+        self._lock = threading.Lock()
+
+        self._discover_images()
+
+    def _discover_images(self) -> None:
+        if os.path.exists(self.image_dir):
+            if os.path.isdir(self.image_dir):
+                files = sorted(os.listdir(self.image_dir))
+                self._image_paths = [
+                    os.path.join(self.image_dir, f)
+                    for f in files
+                    if f.lower().endswith((".jpg", ".jpeg", ".png", ".bmp"))
+                ]
+            elif os.path.isfile(self.image_dir):
+                self._image_paths = [self.image_dir]
+
+    def open(self) -> bool:
+        with self._lock:
+            self._discover_images()
+            if not self._image_paths:
+                self._is_opened = False
+                return False
+            self._is_opened = True
+            self._cur_idx = 0
+            return True
+
+    def read(self) -> Tuple[bool, Optional[np.ndarray], Optional[np.ndarray]]:
+        with self._lock:
+            if not self._is_opened or not self._image_paths:
+                return False, None, None
+
+            if self._cur_idx >= len(self._image_paths):
+                if self.loop:
+                    self._cur_idx = 0
+                else:
+                    return False, None, None
+
+            img_path = self._image_paths[self._cur_idx]
+            self._cur_idx += 1
+
+        bgr = cv2.imread(img_path)
+        if bgr is None:
+            return False, None, None
+
+        if (bgr.shape[1], bgr.shape[0]) != (self.width, self.height):
+            bgr = cv2.resize(bgr, (self.width, self.height), interpolation=cv2.INTER_AREA)
+
+        rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+
+        depth_m = None
+        if self.simulate_depth:
+            # Generate realistic perspective ground depth gradient
+            depth_m = np.zeros((self.height, self.width), dtype=np.float32)
+            horizon_idx = int(self.height * 0.45)
+            ground_rows = self.height - horizon_idx
+            if ground_rows > 0:
+                ground_grad = np.linspace(10.0, 1.2, ground_rows, dtype=np.float32)[:, np.newaxis]
+                depth_m[horizon_idx:, :] = np.tile(ground_grad, (1, self.width))
+
+        return True, rgb, depth_m
+
+    def release(self) -> None:
+        with self._lock:
+            self._is_opened = False
 
 class CameraHealthMonitor:
     """Tracks acquisition rate, processing rate, latency, and operational health."""
@@ -223,15 +318,24 @@ class LiveCameraStreamer:
             self._stop_event.clear()
 
             # Initialize capture source
-            if isinstance(self.source_arg, MockLiveCamera):
+            if isinstance(self.source_arg, (MockLiveCamera, ImageSequenceCamera)):
                 self._cap = self.source_arg
                 success = self._cap.open()
             elif isinstance(self.source_arg, int):
                 self._cap = cv2.VideoCapture(self.source_arg)
                 success = self._cap.isOpened()
-            elif isinstance(self.source_arg, str) and self.source_arg.isdigit():
-                self._cap = cv2.VideoCapture(int(self.source_arg))
-                success = self._cap.isOpened()
+            elif isinstance(self.source_arg, str):
+                if self.source_arg.isdigit():
+                    self._cap = cv2.VideoCapture(int(self.source_arg))
+                    success = self._cap.isOpened()
+                elif os.path.isdir(self.source_arg):
+                    self._cap = ImageSequenceCamera(self.source_arg, target_fps=self.target_fps)
+                    success = self._cap.open()
+                elif os.path.isfile(self.source_arg):
+                    self._cap = cv2.VideoCapture(self.source_arg)
+                    success = self._cap.isOpened()
+                else:
+                    success = False
             else:
                 success = False
 
@@ -258,7 +362,7 @@ class LiveCameraStreamer:
 
             try:
                 # Capture frame
-                if isinstance(self._cap, MockLiveCamera):
+                if isinstance(self._cap, (MockLiveCamera, ImageSequenceCamera)):
                     ret, rgb, depth_m = self._cap.read()
                 elif isinstance(self._cap, cv2.VideoCapture):
                     ret, bgr = self._cap.read()
@@ -266,7 +370,17 @@ class LiveCameraStreamer:
                         rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
                         depth_m = None
                     else:
-                        ret, rgb, depth_m = False, None, None
+                        # Auto-loop video file if reached EOF
+                        if isinstance(self.source_arg, str) and not self.source_arg.isdigit() and os.path.isfile(self.source_arg):
+                            self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                            ret, bgr = self._cap.read()
+                            if ret and bgr is not None:
+                                rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+                                depth_m = None
+                            else:
+                                ret, rgb, depth_m = False, None, None
+                        else:
+                            ret, rgb, depth_m = False, None, None
                 else:
                     ret, rgb, depth_m = False, None, None
 

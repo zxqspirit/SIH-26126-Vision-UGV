@@ -42,7 +42,7 @@ if REPO_ROOT not in sys.path:
 from src.datasets.outdoor_dataset_loader import OutdoorDatasetLoader
 from src.interfaces.types import TrackingStatus
 from src.pipeline import NavigationPipeline
-from src.sensors.live_pipeline import LiveCameraStreamer, MockLiveCamera
+from src.sensors.live_pipeline import LiveCameraStreamer, MockLiveCamera, ImageSequenceCamera
 
 PORT = 5000
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -55,6 +55,7 @@ FRAME_CACHE: Dict[str, Dict[int, Dict[str, Any]]] = {}
 # Live streaming state
 LIVE_STREAMER: Optional[LiveCameraStreamer] = None
 LIVE_PIPELINE: Optional[NavigationPipeline] = None
+CURRENT_LIVE_SCENARIO: Optional[str] = None
 
 
 def get_or_create_pipeline(scenario_name: str) -> Tuple[OutdoorDatasetLoader, NavigationPipeline]:
@@ -351,7 +352,9 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 {"id": "scenario_3_terrain_boundary", "name": "Scenario 3: Non-Traversable Vegetation Boundary"},
                 {"id": "scenario_4_depth_degradation", "name": "Scenario 4: Depth Degradation & Sensor Dropout"},
                 {"id": "scenario_5_visual_degradation", "name": "Scenario 5: Visual Feature Loss (Rule 13 E-Stop)"},
-                {"id": "live_camera", "name": "LIVE CAMERA: Real-Time Stream (Single-Slot Ring Buffer)"},
+                {"id": "live_kaggle_offroad", "name": "LIVE SENSOR: Kaggle Off-Road Trail Stream (515 4K Frames)"},
+                {"id": "live_webcam", "name": "LIVE SENSOR: Real USB / DirectShow Camera (Device 0)"},
+                {"id": "live_camera", "name": "LIVE SENSOR: Virtual Simulated Stream (Single-Slot Ring Buffer)"},
             ]
             self._send_json({"scenarios": scenarios})
             return
@@ -360,8 +363,8 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             query = urllib.parse.parse_qs(parsed.query)
             scenario = query.get("scenario", ["scenario_1_open_path"])[0]
 
-            if scenario == "live_camera":
-                self._handle_live_telemetry()
+            if scenario.startswith("live_"):
+                self._handle_live_telemetry(scenario)
                 return
 
             frame_idx = int(query.get("frame", [0])[0])
@@ -378,7 +381,9 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             return
 
         elif path == "/api/live_telemetry":
-            self._handle_live_telemetry()
+            query = urllib.parse.parse_qs(parsed.query)
+            scenario = query.get("scenario", ["live_camera"])[0]
+            self._handle_live_telemetry(scenario)
             return
 
         elif path == "/api/reset":
@@ -396,27 +401,90 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
         return super().do_GET()
 
-    def _handle_live_telemetry(self) -> None:
-        """Process live frame from LiveCameraStreamer and return serialized telemetry."""
-        global LIVE_STREAMER, LIVE_PIPELINE
+    def _handle_live_telemetry(self, scenario: str = "live_camera") -> None:
+        """Process live frame from LiveCameraStreamer with dynamic sensor source switching."""
+        global LIVE_STREAMER, LIVE_PIPELINE, CURRENT_LIVE_SCENARIO
         try:
-            if LIVE_STREAMER is None:
-                cam = MockLiveCamera(target_fps=20.0, frame_width=640, frame_height=480, simulate_depth=True)
-                LIVE_STREAMER = LiveCameraStreamer(camera_source=cam, target_fps=20.0)
+            # Recreate streamer if scenario source changed
+            if LIVE_STREAMER is None or CURRENT_LIVE_SCENARIO != scenario:
+                if LIVE_STREAMER is not None:
+                    try:
+                        LIVE_STREAMER.stop(timeout_s=0.5)
+                    except Exception:
+                        pass
+
+                source_label = "Virtual Simulated Stream"
+                if scenario == "live_kaggle_offroad":
+                    kaggle_path = r"C:\SIH\tests\TrainingImages\TrainingImages\OriginalImages"
+                    if not os.path.exists(kaggle_path):
+                        # Fallback to local sample data
+                        kaggle_path = os.path.join(REPO_ROOT, "demo", "sample_data", "scenario_1_open_path", "rgb")
+                    cam = ImageSequenceCamera(kaggle_path, target_fps=15.0, loop=True)
+                    LIVE_STREAMER = LiveCameraStreamer(camera_source=cam, target_fps=15.0, sequence_name="kaggle_offroad")
+                    source_label = "Kaggle Off-Road Trail Stream (515 Frames)"
+                elif scenario == "live_webcam":
+                    # Attempt physical webcam 0, fallback to mock if unavailable
+                    test_cap = cv2.VideoCapture(0)
+                    if test_cap.isOpened():
+                        test_cap.release()
+                        LIVE_STREAMER = LiveCameraStreamer(camera_source=0, target_fps=20.0, sequence_name="webcam_device_0")
+                        source_label = "Real USB / DirectShow Camera (Device 0)"
+                    else:
+                        cam = MockLiveCamera(target_fps=20.0, frame_width=640, frame_height=480, simulate_depth=True)
+                        LIVE_STREAMER = LiveCameraStreamer(camera_source=cam, target_fps=20.0, sequence_name="webcam_fallback_mock")
+                        source_label = "Webcam Unavailable (Fallback to Virtual Sensor)"
+                else:
+                    cam = MockLiveCamera(target_fps=20.0, frame_width=640, frame_height=480, simulate_depth=True)
+                    LIVE_STREAMER = LiveCameraStreamer(camera_source=cam, target_fps=20.0, sequence_name="virtual_sensor")
+                    source_label = "Virtual Simulated Stream (Single-Slot Ring Buffer)"
+
                 LIVE_STREAMER.start()
                 LIVE_PIPELINE = NavigationPipeline()
+                CURRENT_LIVE_SCENARIO = scenario
 
-            frame = LIVE_STREAMER.read_next_frame(timeout_s=0.5)
+            frame = LIVE_STREAMER.read_next_frame(timeout_s=0.6)
+            metrics = LIVE_STREAMER.get_health_metrics()
+
+            source_label_map = {
+                "live_kaggle_offroad": "Kaggle Off-Road Trail Stream",
+                "live_webcam": "USB / DirectShow Webcam",
+                "live_camera": "Virtual Simulated Sensor",
+            }
+            active_label = source_label_map.get(scenario, "Live Sensor")
+
             if frame is None:
-                # Fallback to empty live status
-                metrics = LIVE_STREAMER.get_health_metrics()
-                self._send_json({"is_live": True, "health": metrics.to_dict(), "judge_state": metrics.health_state.value})
+                self._send_json({
+                    "is_live": True,
+                    "health": metrics.to_dict(),
+                    "live_health": metrics.to_dict(),
+                    "live_sensor": {
+                        "source_id": scenario,
+                        "source_label": active_label,
+                        "is_live": True,
+                        "health_state": metrics.health_state.value,
+                        "capture_fps": metrics.capture_fps,
+                        "processing_fps": metrics.processing_fps,
+                        "dropped_frames": metrics.dropped_frames,
+                    },
+                    "judge_state": metrics.health_state.value,
+                })
                 return
 
             cmd, tele = LIVE_PIPELINE.process_frame(frame)
             data = serialize_frame_telemetry(frame, cmd, tele, LIVE_PIPELINE, frame.frame_id)
             data["is_live"] = True
-            data["live_health"] = LIVE_STREAMER.get_health_metrics().to_dict()
+            data["live_health"] = metrics.to_dict()
+            data["live_sensor"] = {
+                "source_id": scenario,
+                "source_label": active_label,
+                "is_live": True,
+                "health_state": metrics.health_state.value,
+                "capture_fps": metrics.capture_fps,
+                "processing_fps": metrics.processing_fps,
+                "dropped_frames": metrics.dropped_frames,
+                "frame_latency_ms": metrics.frame_latency_ms,
+                "total_captured": metrics.total_captured,
+            }
             data["total_frames"] = 1000
             self._send_json(data)
         except Exception as e:

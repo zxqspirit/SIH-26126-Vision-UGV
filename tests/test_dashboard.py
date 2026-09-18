@@ -285,6 +285,8 @@ def test_dashboard_http_server_endpoints():
         assert "scenario_1_open_path" in scenario_ids
         assert "scenario_2_sudden_obstacle" in scenario_ids
         assert "live_camera" in scenario_ids
+        assert "live_kaggle_offroad" in scenario_ids
+        assert "live_webcam" in scenario_ids
 
         # 2. Test /api/telemetry
         req_t = urllib.request.urlopen(f"{base_url}/api/telemetry?scenario=scenario_1_open_path&frame=0", timeout=10)
@@ -308,6 +310,14 @@ def test_dashboard_http_server_endpoints():
         live_telem = json.loads(req_l.read().decode("utf-8"))
         assert "judge_state" in live_telem
         assert "explainability" in live_telem
+        assert live_telem.get("is_live") is True
+
+        # 5. Test /api/live_telemetry with live_kaggle_offroad
+        req_k = urllib.request.urlopen(f"{base_url}/api/live_telemetry?scenario=live_kaggle_offroad", timeout=10)
+        assert req_k.status == 200
+        kaggle_telem = json.loads(req_k.read().decode("utf-8"))
+        assert kaggle_telem.get("is_live") is True
+        assert "live_sensor" in kaggle_telem
 
     finally:
         server.shutdown()

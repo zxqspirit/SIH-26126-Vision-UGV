@@ -14,6 +14,7 @@ from .camera_pipeline import (
 )
 from .live_pipeline import (
     MockLiveCamera,
+    ImageSequenceCamera,
     CameraHealthMonitor,
     LiveCameraStreamer,
 )
@@ -30,6 +31,7 @@ __all__ = [
     "create_camera_source",
     "benchmark_source",
     "MockLiveCamera",
+    "ImageSequenceCamera",
     "CameraHealthMonitor",
     "LiveCameraStreamer",
 ]
