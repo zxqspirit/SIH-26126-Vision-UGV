@@ -124,6 +124,10 @@ class FusedTraversabilityResult:
     origin_y_m: float = 5.0  # Center offset
     grid_size_m: Tuple[float, float] = (10.0, 10.0)  # (length, width) forward-facing
     latency_ms: float = 0.0
+    fused_traversability: Optional[np.ndarray] = None  # Shape (H, W), float32 in [0.0..1.0]
+    obstacle_mask: Optional[np.ndarray] = None  # Shape (grid_h, grid_w), bool (True where lethal hazard)
+    uncertainty_grid: Optional[np.ndarray] = None  # Shape (grid_h, grid_w), float32 in [0.0..1.0]
+    uncertainty_px: Optional[np.ndarray] = None  # Shape (H, W), float32 in [0.0..1.0]
 
 
 @dataclass
