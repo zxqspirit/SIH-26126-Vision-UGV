@@ -284,9 +284,12 @@ def test_dashboard_http_server_endpoints():
         scenario_ids = [s["id"] for s in scenarios]
         assert "scenario_1_open_path" in scenario_ids
         assert "scenario_2_sudden_obstacle" in scenario_ids
-        assert "live_camera" in scenario_ids
         assert "live_kaggle_offroad" in scenario_ids
         assert "live_webcam" in scenario_ids
+        assert "live_camera" not in scenario_ids
+        scenario_names = {s["id"]: s["name"] for s in scenarios}
+        assert "RECORDED DATA: Kaggle Off-Road Trail Sequence" in scenario_names["live_kaggle_offroad"]
+        assert "LIVE CAMERA: USB Camera / DirectShow" in scenario_names["live_webcam"]
 
         # 2. Test /api/telemetry
         req_t = urllib.request.urlopen(f"{base_url}/api/telemetry?scenario=scenario_1_open_path&frame=0", timeout=10)

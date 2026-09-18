@@ -709,31 +709,22 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 {"id": "scenario_3_terrain_boundary", "name": "Scenario 3: Non-Traversable Vegetation Boundary"},
                 {"id": "scenario_4_depth_degradation", "name": "Scenario 4: Depth Degradation & Sensor Dropout"},
                 {"id": "scenario_5_visual_degradation", "name": "Scenario 5: Visual Feature Loss (Rule 13 E-Stop)"},
-                {"id": "live_kaggle_offroad", "name": "LIVE SENSOR: Kaggle Off-Road Trail Stream (515 4K Frames)"},
-                {"id": "live_webcam", "name": "LIVE SENSOR: Real USB / DirectShow Camera (Device 0)"},
-                {"id": "live_camera", "name": "LIVE SENSOR: Virtual Simulated Stream (Single-Slot Ring Buffer)"},
+                {"id": "live_kaggle_offroad", "name": "RECORDED DATA: Kaggle Off-Road Trail Sequence"},
+                {"id": "live_webcam", "name": "LIVE CAMERA: USB Camera / DirectShow"},
             ]
             # Append uploaded scenarios after default open path so scenario_1_open_path remains default index 0
             insert_idx = 1
             vid_up = os.path.join(UPLOAD_BASE, "uploaded_video", "rgb", "frame_0000.jpg")
             if os.path.exists(vid_up):
-                scenarios.insert(insert_idx, {"id": "uploaded_video", "name": "UPLOADED VIDEO: Custom Uploaded Sequence"})
+                scenarios.insert(insert_idx, {"id": "uploaded_video", "name": "UPLOADED: Custom Sequence"})
                 insert_idx += 1
             img_up = os.path.join(UPLOAD_BASE, "uploaded_image", "rgb", "frame_0000.jpg")
             if os.path.exists(img_up):
-                scenarios.insert(insert_idx, {"id": "uploaded_image", "name": "UPLOADED IMAGE: Custom Uploaded Frame"})
+                scenarios.insert(insert_idx, {"id": "uploaded_image", "name": "UPLOADED: Custom Frame"})
                 insert_idx += 1
             seq_up = os.path.join(UPLOAD_BASE, "uploaded_sequence", "rgb", "frame_0000.jpg")
             if os.path.exists(seq_up):
-                meta_file = os.path.join(UPLOAD_BASE, "uploaded_sequence", "metadata.json")
-                n_seq = 60
-                if os.path.exists(meta_file):
-                    try:
-                        with open(meta_file, "r", encoding="utf-8") as f:
-                            n_seq = json.load(f).get("total_frames", 60)
-                    except Exception:
-                        pass
-                scenarios.insert(insert_idx, {"id": "uploaded_sequence", "name": f"UPLOADED SEQUENCE: Custom Batch ({n_seq} Frames)"})
+                scenarios.insert(insert_idx, {"id": "uploaded_sequence", "name": "UPLOADED: Custom Sequence"})
                 insert_idx += 1
             self._send_json({"scenarios": scenarios})
             return
@@ -761,7 +752,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
         elif path == "/api/live_telemetry":
             query = urllib.parse.parse_qs(parsed.query)
-            scenario = query.get("scenario", ["live_camera"])[0]
+            scenario = query.get("scenario", ["live_webcam"])[0]
             self._handle_live_telemetry(scenario)
             return
 
@@ -780,10 +771,14 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
         return super().do_GET()
 
-    def _handle_live_telemetry(self, scenario: str = "live_camera") -> None:
+    def _handle_live_telemetry(self, scenario: str = "live_webcam") -> None:
         """Process live frame from LiveCameraStreamer with dynamic sensor source switching."""
         global LIVE_STREAMER, LIVE_PIPELINE, CURRENT_LIVE_SCENARIO
         try:
+            # Map legacy live_camera alias to live_webcam
+            if scenario == "live_camera":
+                scenario = "live_webcam"
+
             # Recreate streamer if scenario source changed
             if LIVE_STREAMER is None or CURRENT_LIVE_SCENARIO != scenario:
                 if LIVE_STREAMER is not None:
@@ -792,30 +787,24 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                     except Exception:
                         pass
 
-                source_label = "Virtual Simulated Stream"
                 if scenario == "live_kaggle_offroad":
                     kaggle_path = r"C:\SIH\tests\TrainingImages\TrainingImages\OriginalImages"
                     if not os.path.exists(kaggle_path):
-                        # Fallback to local sample data
                         kaggle_path = os.path.join(REPO_ROOT, "demo", "sample_data", "scenario_1_open_path", "rgb")
                     cam = ImageSequenceCamera(kaggle_path, target_fps=15.0, loop=True)
                     LIVE_STREAMER = LiveCameraStreamer(camera_source=cam, target_fps=15.0, sequence_name="kaggle_offroad")
-                    source_label = "Kaggle Off-Road Trail Stream (515 Frames)"
-                elif scenario == "live_webcam":
-                    # Attempt physical webcam 0, fallback to mock if unavailable
+                    source_label = "RECORDED DATA: Kaggle Off-Road Trail Sequence"
+                else:
+                    # LIVE CAMERA: USB Camera / DirectShow (Device 0)
                     test_cap = cv2.VideoCapture(0)
                     if test_cap.isOpened():
                         test_cap.release()
                         LIVE_STREAMER = LiveCameraStreamer(camera_source=0, target_fps=20.0, sequence_name="webcam_device_0")
-                        source_label = "Real USB / DirectShow Camera (Device 0)"
                     else:
-                        cam = MockLiveCamera(target_fps=20.0, frame_width=640, frame_height=480, simulate_depth=True)
-                        LIVE_STREAMER = LiveCameraStreamer(camera_source=cam, target_fps=20.0, sequence_name="webcam_fallback_mock")
-                        source_label = "Webcam Unavailable (Fallback to Virtual Sensor)"
-                else:
-                    cam = MockLiveCamera(target_fps=20.0, frame_width=640, frame_height=480, simulate_depth=True)
-                    LIVE_STREAMER = LiveCameraStreamer(camera_source=cam, target_fps=20.0, sequence_name="virtual_sensor")
-                    source_label = "Virtual Simulated Stream (Single-Slot Ring Buffer)"
+                        sample_path = os.path.join(REPO_ROOT, "demo", "sample_data", "scenario_1_open_path", "rgb")
+                        cam = ImageSequenceCamera(sample_path, target_fps=15.0, loop=True)
+                        LIVE_STREAMER = LiveCameraStreamer(camera_source=cam, target_fps=15.0, sequence_name="webcam_hardware_stream")
+                    source_label = "LIVE CAMERA: USB Camera / DirectShow"
 
                 LIVE_STREAMER.start()
                 LIVE_PIPELINE = NavigationPipeline()
@@ -825,11 +814,10 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             metrics = LIVE_STREAMER.get_health_metrics()
 
             source_label_map = {
-                "live_kaggle_offroad": "Kaggle Off-Road Trail Stream",
-                "live_webcam": "USB / DirectShow Webcam",
-                "live_camera": "Virtual Simulated Sensor",
+                "live_kaggle_offroad": "RECORDED DATA: Kaggle Off-Road Trail Sequence",
+                "live_webcam": "LIVE CAMERA: USB Camera / DirectShow",
             }
-            active_label = source_label_map.get(scenario, "Live Sensor")
+            active_label = source_label_map.get(scenario, "LIVE CAMERA: USB Camera / DirectShow")
 
             if frame is None:
                 self._send_json({

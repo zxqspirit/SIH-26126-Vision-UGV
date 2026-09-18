@@ -753,9 +753,8 @@
         <option value="scenario_3_terrain_boundary">Scenario 3: Non-Traversable Bushes</option>
         <option value="scenario_4_depth_degradation">Scenario 4: Glare & Invalid Depth (Rule 12)</option>
         <option value="scenario_5_visual_degradation">Scenario 5: Visual Feature Loss (Rule 13 E-Stop)</option>
-        <option value="live_kaggle_offroad">LIVE SENSOR: Kaggle Off-Road Trail Stream (515 Frames)</option>
-        <option value="live_webcam">LIVE SENSOR: Real USB / DirectShow Camera (Device 0)</option>
-        <option value="live_camera">LIVE SENSOR: Virtual Simulated Camera</option>
+        <option value="live_kaggle_offroad">RECORDED DATA: Kaggle Off-Road Trail Sequence</option>
+        <option value="live_webcam">LIVE CAMERA: USB Camera / DirectShow</option>
       </select>
       <div id="statusPill" class="status-pill">
         <span class="pulse-dot"></span>
@@ -1044,7 +1043,7 @@
       if (currentScenario.startsWith("live_")) {
         slider.disabled = true;
         const drops = data.live_health?.dropped_frames ?? (data.pipeline_stats?.dropped_frames || 0);
-        const srcLabel = data.live_sensor?.source_label || "LIVE SENSOR";
+        const srcLabel = data.live_sensor?.source_label || (currentScenario === "live_kaggle_offroad" ? "RECORDED DATA: Kaggle Off-Road Trail Sequence" : "LIVE CAMERA: USB Camera / DirectShow");
         const capFps = data.live_sensor?.capture_fps ? ` @ ${data.live_sensor.capture_fps} FPS` : "";
         document.getElementById("frameCounter").innerText = `${srcLabel}${capFps} [Drops: ${drops}]`;
       } else {
